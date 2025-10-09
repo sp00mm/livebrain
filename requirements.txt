@@ -1,0 +1,6 @@
+PySide6
+onnxruntime
+tokenizers
+numpy
+libsql
+PyPDF2

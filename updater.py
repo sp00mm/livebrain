@@ -1,0 +1,45 @@
+import os
+import json
+import urllib.request
+import zipfile
+
+UPDATE_URL = "http://207.211.163.42/version.json"
+MODEL_URL = "https://objectstorage.us-chicago-1.oraclecloud.com/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip"
+CURRENT_VERSION = "1.0.0"
+
+class Updater:
+    def check_for_updates(self):
+        try:
+            with urllib.request.urlopen(UPDATE_URL) as response:
+                data = json.loads(response.read().decode())
+                latest_version = data.get("version")
+                download_url = data.get("url")
+                
+                if latest_version and latest_version != CURRENT_VERSION:
+                    return {"available": True, "version": latest_version, "url": download_url}
+        except:
+            pass
+        return {"available": False}
+    
+    def download_update(self, url, callback=None):
+        temp_file = os.path.expanduser("~/Downloads/LiveBrain-Update.dmg")
+        urllib.request.urlretrieve(url, temp_file, callback)
+        return temp_file
+    
+    def download_models(self, dest_dir, progress_callback=None):
+        os.makedirs(dest_dir, exist_ok=True)
+        zip_path = os.path.join(dest_dir, "models.zip")
+        
+        def report_progress(block_num, block_size, total_size):
+            if progress_callback and total_size > 0:
+                downloaded = block_num * block_size
+                percent = min(100, int(downloaded * 100 / total_size))
+                progress_callback(percent, downloaded, total_size)
+        
+        urllib.request.urlretrieve(MODEL_URL, zip_path, report_progress)
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(dest_dir)
+        
+        os.remove(zip_path)
+
