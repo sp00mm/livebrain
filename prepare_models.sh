@@ -17,18 +17,13 @@ zip -r ../../embeddinggemma-onnx.zip \
 
 cd ../..
 
-echo "Created embeddinggemma-onnx.zip"
+echo ""
+echo "✅ Created embeddinggemma-onnx.zip"
 echo "Size: $(du -h embeddinggemma-onnx.zip | cut -f1)"
 echo ""
-echo "=== AWS S3 Upload ==="
-echo "  aws s3 cp embeddinggemma-onnx.zip s3://yourbucket/ --acl public-read"
-echo "  URL: https://yourbucket.s3.amazonaws.com/embeddinggemma-onnx.zip"
+echo "Next steps:"
+echo "  cd ../scripts && ./upload-models.sh"
 echo ""
-echo "=== Oracle Cloud Upload ==="
-echo "  1. Go to Oracle Console → Storage → Buckets"
-echo "  2. Upload embeddinggemma-onnx.zip to your bucket"
-echo "  3. Make bucket public or create Pre-Authenticated Request"
-echo "  4. Copy the object URL"
-echo ""
-echo "Update updater.py MODEL_URL with your cloud storage URL"
+echo "This will upload to Oracle Object Storage at:"
+echo "  https://objectstorage.us-chicago-1.oraclecloud.com/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip"
 

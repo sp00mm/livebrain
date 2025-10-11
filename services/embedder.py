@@ -17,7 +17,7 @@ class Embedder:
     
     def __init__(self):
         model_dir = self.get_model_dir()
-        model_path = os.path.join(model_dir, "onnx", "model.onnx")
+        model_path = os.path.join(model_dir, "onnx", "model_q4.onnx")
         tokenizer_path = os.path.join(model_dir, "tokenizer.json")
         self.session = ort.InferenceSession(model_path)
         self.tokenizer = Tokenizer.from_file(tokenizer_path)

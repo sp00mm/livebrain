@@ -16,4 +16,4 @@ main.build/
 *.app/
 venv/
 models/
-
+*.dmg

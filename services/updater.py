@@ -4,7 +4,7 @@ import urllib.request
 import zipfile
 
 UPDATE_URL = "http://207.211.163.42/version.json"
-MODEL_URL = "https://objectstorage.us-chicago-1.oraclecloud.com/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip"
+MODEL_URL = "https://axa3tfnfy6dd.objectstorage.us-chicago-1.oci.customer-oci.com/p/V4u-uKDpP_p2kHbWEZPQZ0sEBe0-qZCqW5i3yu3fK-VC-ZIgCxd8rm7wdK6fL6NV/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip"
 CURRENT_VERSION = "1.0.0"
 
 class Updater:
@@ -37,9 +37,11 @@ class Updater:
                 progress_callback(percent, downloaded, total_size)
         
         urllib.request.urlretrieve(MODEL_URL, zip_path, report_progress)
+        model_subdir = os.path.join(dest_dir, "embeddinggemma-onnx")
+        os.makedirs(model_subdir, exist_ok=True)
         
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(dest_dir)
+            zip_ref.extractall(model_subdir)
         
         os.remove(zip_path)
 
