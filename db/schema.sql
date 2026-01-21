@@ -1,5 +1,4 @@
--- Initial Livebrain schema
--- Version: 1
+-- Livebrain database schema
 
 CREATE TABLE IF NOT EXISTS brains (
     id TEXT PRIMARY KEY,
@@ -140,10 +139,3 @@ CREATE TABLE IF NOT EXISTS user_settings (
     FOREIGN KEY (default_brain_id) REFERENCES brains(id)
 );
 INSERT OR IGNORE INTO user_settings (id) VALUES (1);
-
--- Migration tracking
-CREATE TABLE IF NOT EXISTS _schema_version (
-    version INTEGER PRIMARY KEY,
-    applied_at TEXT NOT NULL
-);
-INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (1, datetime('now'));

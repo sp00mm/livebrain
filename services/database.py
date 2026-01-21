@@ -48,112 +48,15 @@ class Database:
         return os.path.join(app_support, "livebrain.db")
 
     def initialize_schema(self):
-        """Initialize database schema and run any pending migrations."""
-        migrator = Migrator(self)
-        if migrator.get_current_version() == 0:
-            migrator.run_schema()
-        if migrator.needs_migration():
-            migrator.run_pending()
-
-
-# =============================================================================
-# Migrations
-# =============================================================================
-
-class Migrator:
-    """
-    SQL-based migration system.
-
-    Structure:
-        db/schema/001_initial.sql    - Initial schema (run on fresh db)
-        db/migrations/002_xxx.sql    - Migration to version 2
-        db/migrations/003_xxx.sql    - Migration to version 3
-
-    Usage:
-        migrator = Migrator(db)
-        if migrator.needs_migration():
-            migrator.run_pending()
-    """
-
-    def __init__(self, db: Database):
-        self.db = db
-        self.db_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'db')
-
-    def get_current_version(self) -> int:
-        """Get current schema version (0 if no schema)."""
-        try:
-            cursor = self.db.conn.execute("SELECT MAX(version) FROM _schema_version")
-            row = cursor.fetchone()
-            return row[0] if row and row[0] else 0
-        except Exception:
-            return 0
-
-    def get_available_migrations(self) -> list[tuple[int, str]]:
-        """Get list of (version, filepath) for all migration files."""
-        migrations = []
-        migrations_dir = os.path.join(self.db_dir, 'migrations')
-
-        if not os.path.exists(migrations_dir):
-            return migrations
-
-        for filename in sorted(os.listdir(migrations_dir)):
-            if filename.endswith('.sql'):
-                try:
-                    version = int(filename.split('_')[0])
-                    migrations.append((version, os.path.join(migrations_dir, filename)))
-                except ValueError:
-                    continue
-
-        return sorted(migrations)
-
-    def needs_migration(self) -> bool:
-        """Check if there are pending migrations."""
-        current = self.get_current_version()
-        for version, _ in self.get_available_migrations():
-            if version > current:
-                return True
-        return False
-
-    def run_pending(self) -> list[int]:
-        """Run all pending migrations. Returns list of applied versions."""
-        current = self.get_current_version()
-        applied = []
-
-        for version, filepath in self.get_available_migrations():
-            if version > current:
-                self._run_migration(version, filepath)
-                applied.append(version)
-
-        return applied
-
-    def run_schema(self) -> None:
-        """Run initial schema (for fresh database)."""
-        schema_dir = os.path.join(self.db_dir, 'schema')
-        schema_file = os.path.join(schema_dir, '001_initial.sql')
-
-        if os.path.exists(schema_file):
-            self._execute_sql_file(schema_file)
-
-    def _run_migration(self, version: int, filepath: str) -> None:
-        """Run a single migration file."""
-        self._execute_sql_file(filepath)
-        self.db.conn.execute(
-            "INSERT INTO _schema_version (version, applied_at) VALUES (?, datetime('now'))",
-            [version]
-        )
-        self.db.conn.commit()
-
-    def _execute_sql_file(self, filepath: str) -> None:
-        """Execute all statements in a SQL file."""
-        with open(filepath, 'r') as f:
+        """Initialize database schema from schema.sql."""
+        schema_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'db', 'schema.sql')
+        with open(schema_file, 'r') as f:
             sql = f.read()
-
         for statement in sql.split(';'):
             statement = statement.strip()
             if statement:
-                self.db.conn.execute(statement)
-
-        self.db.conn.commit()
+                self.conn.execute(statement)
+        self.conn.commit()
 
 
 # =============================================================================

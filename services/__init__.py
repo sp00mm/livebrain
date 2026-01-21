@@ -3,7 +3,6 @@ from .scanner import FileScanner
 from .updater import Updater
 from .database import (
     Database,
-    Migrator,
     BrainRepository,
     QuestionRepository,
     ArtifactRepository,
@@ -23,7 +22,6 @@ __all__ = [
     'FileScanner',
     'Updater',
     'Database',
-    'Migrator',
     'BrainRepository',
     'QuestionRepository',
     'ArtifactRepository',
