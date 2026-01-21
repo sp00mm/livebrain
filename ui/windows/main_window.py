@@ -7,7 +7,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from services import Embedder, FileScanner, DocumentStorage, Updater
+from services import Embedder, FileScanner, Database, RAGService, Updater
+from models import Brain
 from ui.threads import ModelDownloadThread, IndexThread
 
 
@@ -18,9 +19,12 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
         
         self.scanner = FileScanner()
-        self.storage = DocumentStorage()
+        self.db = Database()
+        self.db.initialize_schema()
+        self.rag = RAGService(self.db)
         self.updater = Updater()
         self.embedder = None
+        self._default_brain = None
         
         self.setup_ui()
         self.check_models_and_initialize()
@@ -150,10 +154,16 @@ class MainWindow(QMainWindow):
             )
     
     def initialize_embedder(self):
-        """Initialize the embedder service and storage."""
+        """Initialize the embedder service."""
         self.embedder = Embedder()
-        embedding_dim = len(self.embedder.embed("test"))
-        self.storage.initialize(embedding_dim)
+        # Create or get default brain for indexing
+        from services import BrainRepository
+        brain_repo = BrainRepository(self.db)
+        brains = brain_repo.get_all()
+        if brains:
+            self._default_brain = brains[0]
+        else:
+            self._default_brain = brain_repo.create(Brain(name="Default"))
     
     def check_for_updates(self):
         """Check for application updates."""
@@ -187,7 +197,7 @@ class MainWindow(QMainWindow):
         self.status.clear()
         self.status.append("Starting indexing...")
         
-        self.thread = IndexThread(directory, self.embedder, self.scanner, self.storage)
+        self.thread = IndexThread(directory, self.embedder, self.scanner, self.rag, self._default_brain.id)
         self.thread.progress.connect(lambda msg: self.status.append(msg))
         self.thread.finished.connect(lambda: self.status.append("Indexing complete"))
         self.thread.start()
@@ -197,18 +207,18 @@ class MainWindow(QMainWindow):
         if not self.embedder:
             QMessageBox.warning(self, "Not Ready", "Please wait for models to download.")
             return
-        
+
         query = self.search_input.text()
         if not query:
             return
-        
+
         self.results.clear()
         embedding = self.embedder.embed(query, is_query=True)
-        results = self.storage.search(embedding)
-        
+        results = self.rag.search(embedding, brain_id=self._default_brain.id if self._default_brain else None)
+
         for result in results:
-            self.results.append(f"Score: {result['distance']:.4f}")
-            self.results.append(f"File: {result['entity']['filepath']}")
-            self.results.append(f"Preview: {result['entity']['text'][:200]}...")
+            self.results.append(f"Score: {result['similarity']:.4f}")
+            self.results.append(f"File: {result['chunk'].filepath}")
+            self.results.append(f"Preview: {result['chunk'].text[:200]}...")
             self.results.append("-" * 80)
 
