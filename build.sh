@@ -1,12 +1,13 @@
 #!/bin/bash
 
-VERSION="1.0.0"
+# Read version from version.json (single source of truth)
+VERSION=$(grep '"version"' version.json | cut -d'"' -f4)
 
 echo "Building LiveBrain v${VERSION}..."
 
-# Clean up previous build
+# Clean up previous build (keep main.build for cache)
 echo "Cleaning up previous build..."
-rm -rf main.app main.dist main.build LiveBrain-*.dmg 2>/dev/null
+rm -rf main.app LiveBrain.app main.dist LiveBrain-*.dmg 2>/dev/null
 
 # Use virtual environment Python directly
 if [ -f "venv/bin/python" ]; then
@@ -24,10 +25,15 @@ $PYTHON -m nuitka --standalone \
   --macos-app-name="LiveBrain" \
   --macos-app-version="${VERSION}" \
   --nofollow-import-to=models \
+  --static-libpython=no \
+  --include-data-files=version.json=version.json \
   main.py
 
+# Rename app bundle
+mv main.app LiveBrain.app
+
 # Check if build succeeded
-if [ ! -d "main.app" ]; then
+if [ ! -d "LiveBrain.app" ]; then
     echo ""
     echo "❌ Build failed! Make sure:"
     echo "  1. Virtual environment is activated: source venv/bin/activate"
@@ -38,10 +44,17 @@ fi
 
 # Remove models from the built app if they were included
 echo "Removing models from bundle..."
-rm -rf main.app/Contents/MacOS/models 2>/dev/null || true
+rm -rf LiveBrain.app/Contents/MacOS/models 2>/dev/null || true
 
 echo "Creating DMG (without models)..."
-hdiutil create -volname "LiveBrain" -srcfolder main.app -ov -format UDZO "LiveBrain-${VERSION}.dmg"
+create-dmg \
+  --volname "LiveBrain" \
+  --window-size 500 320 \
+  --icon-size 80 \
+  --icon "LiveBrain.app" 125 160 \
+  --app-drop-link 375 160 \
+  "LiveBrain-${VERSION}.dmg" \
+  "LiveBrain.app"
 
 echo ""
 echo "✅ Build complete: LiveBrain-${VERSION}.dmg"

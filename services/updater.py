@@ -5,7 +5,12 @@ import zipfile
 
 UPDATE_URL = "http://207.211.163.42/version.json"
 MODEL_URL = "https://axa3tfnfy6dd.objectstorage.us-chicago-1.oci.customer-oci.com/p/V4u-uKDpP_p2kHbWEZPQZ0sEBe0-qZCqW5i3yu3fK-VC-ZIgCxd8rm7wdK6fL6NV/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip"
-CURRENT_VERSION = "1.0.0"
+
+def get_version():
+    version_file = os.path.join(os.path.dirname(__file__), '..', 'version.json')
+    with open(version_file, 'r') as f:
+        return json.load(f)['version']
+
 
 class Updater:
     def check_for_updates(self):
@@ -15,7 +20,7 @@ class Updater:
                 latest_version = data.get("version")
                 download_url = data.get("url")
                 
-                if latest_version and latest_version != CURRENT_VERSION:
+                if latest_version and latest_version != get_version():
                     return {"available": True, "version": latest_version, "url": download_url}
         except:
             pass

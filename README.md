@@ -14,7 +14,7 @@ A minimal document search application with local AI embeddings.
 
 Download the latest release from [yourdomain.com/livebrain](https://yourdomain.com/livebrain)
 
-On first run, the app will download embedding models (~600MB) from S3.
+On first run, the app will download embedding models (~160MB) from Oracle Object Storage.
 
 ## Usage
 
@@ -59,7 +59,7 @@ The app checks for updates on launch. Updates only replace the binary (~50MB), y
 
 ## Development
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for build and deployment instructions.
+See [DEVELOPMENT.md](../DEVELOPMENT.md) for build and deployment instructions.
 
 ## License
 
