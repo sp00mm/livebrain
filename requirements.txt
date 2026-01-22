@@ -7,3 +7,4 @@ PyPDF2
 pyobjc-framework-AVFoundation
 pyobjc-framework-ScreenCaptureKit
 pyobjc-framework-Speech
+openai>=1.68.0

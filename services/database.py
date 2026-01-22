@@ -584,6 +584,20 @@ class InteractionRepository:
         )
         return [self._row_to_interaction(row) for row in cursor.fetchall()]
 
+    def update(self, interaction: Interaction) -> Interaction:
+        self.conn.execute("""
+            UPDATE interactions SET
+                transcript_snapshot_json = ?,
+                artifacts_used_json = ?
+            WHERE id = ?
+        """, [
+            json.dumps(interaction.transcript_snapshot),
+            json.dumps(interaction.artifacts_used),
+            interaction.id
+        ])
+        self.conn.commit()
+        return interaction
+
     def _row_to_interaction(self, row) -> Interaction:
         return Interaction(
             id=row[0],

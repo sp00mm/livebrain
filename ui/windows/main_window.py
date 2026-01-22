@@ -7,9 +7,13 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from services import Embedder, FileScanner, Database, RAGService, Updater, AudioService
-from models import Brain, Session, TranscriptEntry, SpeakerType
-from ui.threads import ModelDownloadThread, IndexThread
+from services.embedder import Embedder
+from services.scanner import FileScanner
+from services.database import Database, RAGService, UserSettingsRepository
+from services.updater import Updater
+from services.audio_service import AudioService
+from models import Brain, Session, TranscriptEntry, SpeakerType, QueryType, StepType, ExecutionStep
+from ui.threads import ModelDownloadThread, IndexThread, QueryExecutionThread
 
 
 class MainWindow(QMainWindow):    
@@ -22,12 +26,14 @@ class MainWindow(QMainWindow):
         self.db = Database()
         self.db.initialize_schema()
         self.rag = RAGService(self.db)
+        self.settings_repo = UserSettingsRepository(self.db)
         self.updater = Updater()
         self.audio_service = AudioService(self.db)
         self.embedder = None
         self._default_brain = None
         self._final_transcripts = []
         self._partial_text = ''
+        self._query_thread = None
 
         self.setup_ui()
         self.check_models_and_initialize()
@@ -46,7 +52,22 @@ class MainWindow(QMainWindow):
         )
         self.models_btn.setVisible(False)
         layout.addWidget(self.models_btn)
-        
+
+        # API Key input
+        api_key_layout = QHBoxLayout()
+        api_key_layout.addWidget(QLabel('OpenAI API Key:'))
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setPlaceholderText('sk-...')
+        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        settings = self.settings_repo.get()
+        if settings.api_key_encrypted:
+            self.api_key_input.setText(settings.api_key_encrypted)
+        api_key_layout.addWidget(self.api_key_input)
+        save_key_btn = QPushButton('Save')
+        save_key_btn.clicked.connect(self.save_api_key)
+        api_key_layout.addWidget(save_key_btn)
+        layout.addLayout(api_key_layout)
+
         # Directory selection
         self.dir_input = QLineEdit()
         self.dir_input.setPlaceholderText("Directory path")
@@ -90,6 +111,32 @@ class MainWindow(QMainWindow):
         audio_layout.addWidget(self.transcript_display)
 
         layout.addWidget(audio_group)
+
+        # Ask Brain section
+        query_group = QGroupBox('Ask Brain')
+        query_layout = QVBoxLayout(query_group)
+
+        query_input_layout = QHBoxLayout()
+        self.query_input = QLineEdit()
+        self.query_input.setPlaceholderText('Ask a question about the conversation...')
+        self.query_input.returnPressed.connect(self.ask_brain)
+        query_input_layout.addWidget(self.query_input)
+
+        self.ask_btn = QPushButton('Ask')
+        self.ask_btn.clicked.connect(self.ask_brain)
+        query_input_layout.addWidget(self.ask_btn)
+        query_layout.addLayout(query_input_layout)
+
+        self.query_status = QLabel('')
+        query_layout.addWidget(self.query_status)
+
+        self.query_response = QTextEdit()
+        self.query_response.setReadOnly(True)
+        self.query_response.setPlaceholderText('Response will appear here...')
+        self.query_response.setMaximumHeight(200)
+        query_layout.addWidget(self.query_response)
+
+        layout.addWidget(query_group)
 
         # Search interface
         layout.addWidget(QLabel('Search:'))
@@ -290,4 +337,56 @@ class MainWindow(QMainWindow):
         if self._partial_text:
             lines = lines + [self._partial_text]
         self.transcript_display.setPlainText('\n'.join(lines))
+
+    def ask_brain(self):
+        query_text = self.query_input.text().strip()
+        if not query_text:
+            return
+
+        session = self.audio_service.get_current_session()
+        if not session:
+            QMessageBox.warning(self, 'No Session', 'Start a recording session first.')
+            return
+
+        if not self._default_brain:
+            QMessageBox.warning(self, 'Not Ready', 'Please wait for initialization.')
+            return
+
+        self.query_input.clear()
+        self.query_response.clear()
+        self.query_status.setText('')
+
+        self._query_thread = QueryExecutionThread(
+            db=self.db,
+            embedder=self.embedder,
+            session_id=session.id,
+            brain=self._default_brain,
+            query_text=query_text,
+            query_type=QueryType.FREEFORM
+        )
+        self._query_thread.step_update.connect(self._on_step_update)
+        self._query_thread.delta.connect(self._on_query_delta)
+        self._query_thread.complete.connect(self._on_query_complete)
+        self._query_thread.start()
+
+    def _on_step_update(self, step: ExecutionStep):
+        labels = {
+            StepType.LISTENING: 'Reviewing conversation...',
+            StepType.SEARCHING_FILES: 'Searching files...',
+            StepType.GENERATING: 'Thinking...'
+        }
+        label = labels.get(step.step_type, str(step.step_type.value))
+        self.query_status.setText(label)
+
+    def _on_query_delta(self, text: str):
+        self.query_response.insertPlainText(text)
+
+    def _on_query_complete(self, _response):
+        self.query_status.setText('')
+
+    def save_api_key(self):
+        key = self.api_key_input.text().strip()
+        settings = self.settings_repo.get()
+        settings.api_key_encrypted = key
+        self.settings_repo.update(settings)
 

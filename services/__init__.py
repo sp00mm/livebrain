@@ -17,6 +17,8 @@ from .database import (
     RAGService
 )
 from .audio_service import AudioService
+from .llm import LLMService, LLMProvider, Message, LLMResponse, StreamCallback, OpenAIProvider
+from .query_execution import QueryExecutionService, QueryContext, ExecutionCallbacks
 
 __all__ = [
     'Embedder',
@@ -35,6 +37,15 @@ __all__ = [
     'MCPServerRepository',
     'UserSettingsRepository',
     'RAGService',
-    'AudioService'
+    'AudioService',
+    'LLMService',
+    'LLMProvider',
+    'Message',
+    'LLMResponse',
+    'StreamCallback',
+    'OpenAIProvider',
+    'QueryExecutionService',
+    'QueryContext',
+    'ExecutionCallbacks'
 ]
 
