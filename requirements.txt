@@ -4,3 +4,6 @@ tokenizers
 numpy
 libsql
 PyPDF2
+pyobjc-framework-AVFoundation
+pyobjc-framework-ScreenCaptureKit
+pyobjc-framework-Speech

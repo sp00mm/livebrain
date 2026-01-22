@@ -16,6 +16,7 @@ from .database import (
     UserSettingsRepository,
     RAGService
 )
+from .audio_service import AudioService
 
 __all__ = [
     'Embedder',
@@ -33,6 +34,7 @@ __all__ = [
     'ExecutionStepRepository',
     'MCPServerRepository',
     'UserSettingsRepository',
-    'RAGService'
+    'RAGService',
+    'AudioService'
 ]
 

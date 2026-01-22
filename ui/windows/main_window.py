@@ -1,14 +1,14 @@
 import os
 import webbrowser
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QPushButton, 
-    QLineEdit, QTextEdit, QFileDialog, QLabel, 
-    QMessageBox, QProgressDialog
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QLineEdit, QTextEdit, QFileDialog, QLabel,
+    QMessageBox, QProgressDialog, QGroupBox
 )
 from PySide6.QtCore import Qt
 
-from services import Embedder, FileScanner, Database, RAGService, Updater
-from models import Brain
+from services import Embedder, FileScanner, Database, RAGService, Updater, AudioService
+from models import Brain, Session, TranscriptEntry, SpeakerType
 from ui.threads import ModelDownloadThread, IndexThread
 
 
@@ -23,9 +23,12 @@ class MainWindow(QMainWindow):
         self.db.initialize_schema()
         self.rag = RAGService(self.db)
         self.updater = Updater()
+        self.audio_service = AudioService(self.db)
         self.embedder = None
         self._default_brain = None
-        
+        self._final_transcripts = []
+        self._partial_text = ''
+
         self.setup_ui()
         self.check_models_and_initialize()
     
@@ -62,9 +65,34 @@ class MainWindow(QMainWindow):
         self.status.setMaximumHeight(150)
         self.status.setReadOnly(True)
         layout.addWidget(self.status)
-        
+
+        # Audio recording section
+        audio_group = QGroupBox('Audio Recording')
+        audio_layout = QVBoxLayout(audio_group)
+
+        audio_controls = QHBoxLayout()
+        self.record_btn = QPushButton('Start Recording')
+        self.record_btn.clicked.connect(self.toggle_recording)
+        self.record_btn.setStyleSheet(
+            'QPushButton { background-color: #2196F3; color: white; padding: 8px; font-weight: bold; }'
+        )
+        audio_controls.addWidget(self.record_btn)
+
+        self.recording_status = QLabel('Stopped')
+        audio_controls.addWidget(self.recording_status)
+        audio_controls.addStretch()
+        audio_layout.addLayout(audio_controls)
+
+        self.transcript_display = QTextEdit()
+        self.transcript_display.setReadOnly(True)
+        self.transcript_display.setPlaceholderText('Transcript will appear here...')
+        self.transcript_display.setMaximumHeight(200)
+        audio_layout.addWidget(self.transcript_display)
+
+        layout.addWidget(audio_group)
+
         # Search interface
-        layout.addWidget(QLabel("Search:"))
+        layout.addWidget(QLabel('Search:'))
         
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Enter search query")
@@ -221,4 +249,45 @@ class MainWindow(QMainWindow):
             self.results.append(f"File: {result['chunk'].filepath}")
             self.results.append(f"Preview: {result['chunk'].text[:200]}...")
             self.results.append("-" * 80)
+
+    def toggle_recording(self):
+        if self.audio_service.is_recording():
+            self.stop_recording()
+        else:
+            self.start_recording()
+
+    def start_recording(self):
+        session = Session(name='Recording Session')
+        self.audio_service.start_session(session, self._on_transcript)
+        self.record_btn.setText('Stop Recording')
+        self.record_btn.setStyleSheet(
+            'QPushButton { background-color: #f44336; color: white; padding: 8px; font-weight: bold; }'
+        )
+        self.recording_status.setText('Recording...')
+        self._final_transcripts = []
+        self._partial_text = ''
+        self.transcript_display.clear()
+
+    def stop_recording(self):
+        self.audio_service.stop_session()
+        self.record_btn.setText('Start Recording')
+        self.record_btn.setStyleSheet(
+            'QPushButton { background-color: #2196F3; color: white; padding: 8px; font-weight: bold; }'
+        )
+        self.recording_status.setText('Stopped')
+
+    def _on_transcript(self, entry: TranscriptEntry, is_final: bool):
+        speaker = 'You' if entry.speaker == SpeakerType.USER else 'Other'
+        if is_final:
+            self._final_transcripts.append(f'{speaker}: {entry.text}')
+            self._partial_text = ''
+        else:
+            self._partial_text = f'{speaker}: {entry.text}...'
+        self._update_transcript_display()
+
+    def _update_transcript_display(self):
+        lines = self._final_transcripts[-10:]
+        if self._partial_text:
+            lines = lines + [self._partial_text]
+        self.transcript_display.setPlainText('\n'.join(lines))
 
