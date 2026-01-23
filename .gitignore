@@ -1,6 +1,7 @@
 *.db
 *.db-shm
 *.db-wal
+.DS_Store
 __pycache__/
 *.pyc
 *.pyo
@@ -15,6 +16,6 @@ main.dist/
 main.build/
 *.app/
 venv/
-models/
+models/embeddinggemma-onnx/
 *.dmg
 embeddinggemma-onnx.zip

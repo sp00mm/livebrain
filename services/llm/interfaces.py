@@ -25,13 +25,15 @@ StreamCallback = Callable[[str, bool], None]  # (delta, is_final)
 class LLMProvider(ABC):
     @abstractmethod
     def complete(self, messages: list[Message], config: ModelConfig,
-                 system_prompt: Optional[str] = None) -> LLMResponse:
+                 system_prompt: Optional[str] = None,
+                 tools: Optional[list[dict]] = None) -> LLMResponse:
         pass
 
     @abstractmethod
     def stream(self, messages: list[Message], config: ModelConfig,
                system_prompt: Optional[str] = None,
-               on_delta: Optional[StreamCallback] = None) -> Generator[str, None, LLMResponse]:
+               on_delta: Optional[StreamCallback] = None,
+               tools: Optional[list[dict]] = None) -> Generator[str, None, LLMResponse]:
         pass
 
     @abstractmethod

@@ -8,14 +8,14 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models import (
-    Brain, Question, Artifact, DocumentChunk, Session,
+    Brain, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
     MCPServer, ModelConfig, BrainCapabilities,
-    FileReference, SpeakerType, QueryType, ArtifactType,
+    FileReference, SpeakerType, QueryType, ResourceType,
     IndexStatus, StepType, StepStatus, MCPStatus
 )
 from services.database import (
-    BrainRepository, QuestionRepository, ArtifactRepository,
+    BrainRepository, QuestionRepository, ResourceRepository,
     DocumentChunkRepository, SessionRepository, TranscriptEntryRepository,
     InteractionRepository, AIResponseRepository, ExecutionStepRepository,
     MCPServerRepository, UserSettingsRepository, RAGService
@@ -201,75 +201,98 @@ class TestQuestionRepository:
         assert len(questions) == 0
 
 
-class TestArtifactRepository:
-    """Tests for Artifact CRUD operations."""
+class TestResourceRepository:
+    """Tests for Resource CRUD operations."""
 
-    def test_create_file_artifact(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
-
-        artifact_repo = ArtifactRepository(db)
-        artifact = Artifact(
-            brain_id=brain.id,
-            artifact_type=ArtifactType.FILE,
+    def test_create_file_resource(self, db):
+        resource_repo = ResourceRepository(db)
+        resource = Resource(
+            resource_type=ResourceType.FILE,
             name="Resume.pdf",
-            metadata={"filepath": "/path/to/Resume.pdf", "file_type": "pdf"}
+            path="/path/to/Resume.pdf",
+            size_bytes=1024
         )
-        created = artifact_repo.create(artifact)
+        created = resource_repo.create(resource)
 
-        assert created.artifact_type == ArtifactType.FILE
+        assert created.resource_type == ResourceType.FILE
         assert created.name == "Resume.pdf"
-        assert created.filepath == "/path/to/Resume.pdf"
+        assert created.path == "/path/to/Resume.pdf"
 
-    def test_create_folder_artifact(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
-
-        artifact_repo = ArtifactRepository(db)
-        artifact = Artifact(
-            brain_id=brain.id,
-            artifact_type=ArtifactType.FOLDER,
+    def test_create_folder_resource(self, db):
+        resource_repo = ResourceRepository(db)
+        resource = Resource(
+            resource_type=ResourceType.FOLDER,
             name="Company Policies",
-            metadata={"folderpath": "/path/to/policies", "recursive": True}
+            path="/path/to/policies"
         )
-        artifact_repo.create(artifact)
+        resource_repo.create(resource)
 
-        fetched = artifact_repo.get(artifact.id)
+        fetched = resource_repo.get(resource.id)
 
-        assert fetched.artifact_type == ArtifactType.FOLDER
-        assert fetched.folderpath == "/path/to/policies"
+        assert fetched.resource_type == ResourceType.FOLDER
+        assert fetched.path == "/path/to/policies"
 
     def test_update_index_status(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        resource_repo = ResourceRepository(db)
+        resource = Resource(resource_type=ResourceType.FOLDER, name="test", path="/test")
+        resource_repo.create(resource)
 
-        artifact_repo = ArtifactRepository(db)
-        artifact = Artifact(brain_id=brain.id, artifact_type=ArtifactType.FILE, name="test.txt")
-        artifact_repo.create(artifact)
+        assert resource_repo.get(resource.id).index_status == IndexStatus.PENDING
 
-        assert artifact_repo.get(artifact.id).index_status == IndexStatus.PENDING
+        resource_repo.update_index_status(resource.id, IndexStatus.INDEXING)
+        assert resource_repo.get(resource.id).index_status == IndexStatus.INDEXING
 
-        artifact_repo.update_index_status(artifact.id, IndexStatus.INDEXING)
-        assert artifact_repo.get(artifact.id).index_status == IndexStatus.INDEXING
-
-        artifact_repo.update_index_status(artifact.id, IndexStatus.INDEXED)
-        fetched = artifact_repo.get(artifact.id)
+        resource_repo.update_index_status(resource.id, IndexStatus.INDEXED, size_bytes=5000, file_count=10)
+        fetched = resource_repo.get(resource.id)
         assert fetched.index_status == IndexStatus.INDEXED
         assert fetched.indexed_at is not None
+        assert fetched.size_bytes == 5000
+        assert fetched.file_count == 10
 
     def test_update_index_status_failed(self, db):
+        resource_repo = ResourceRepository(db)
+        resource = Resource(resource_type=ResourceType.FOLDER, name="test", path="/test")
+        resource_repo.create(resource)
+
+        resource_repo.update_index_status(resource.id, IndexStatus.FAILED, error="File not found")
+
+        fetched = resource_repo.get(resource.id)
+        assert fetched.index_status == IndexStatus.FAILED
+        assert fetched.index_error == "File not found"
+
+    def test_link_resource_to_brain(self, db):
         brain_repo = BrainRepository(db)
         brain = brain_repo.create(Brain(name="Test Brain"))
 
-        artifact_repo = ArtifactRepository(db)
-        artifact = Artifact(brain_id=brain.id, artifact_type=ArtifactType.FILE, name="test.txt")
-        artifact_repo.create(artifact)
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Docs",
+            path="/docs"
+        ))
 
-        artifact_repo.update_index_status(artifact.id, IndexStatus.FAILED, "File not found")
+        resource_repo.link_to_brain(resource.id, brain.id)
 
-        fetched = artifact_repo.get(artifact.id)
-        assert fetched.index_status == IndexStatus.FAILED
-        assert fetched.index_error == "File not found"
+        linked = resource_repo.get_by_brain(brain.id)
+        assert len(linked) == 1
+        assert linked[0].id == resource.id
+
+    def test_unlink_resource_from_brain(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name="Test Brain"))
+
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Docs",
+            path="/docs"
+        ))
+
+        resource_repo.link_to_brain(resource.id, brain.id)
+        resource_repo.unlink_from_brain(resource.id, brain.id)
+
+        linked = resource_repo.get_by_brain(brain.id)
+        assert len(linked) == 0
 
 
 class TestSessionRepository:
@@ -467,7 +490,7 @@ class TestAIResponseRepository:
             model_used="gpt-4o",
             file_references=[
                 FileReference(
-                    artifact_id="art-123",
+                    resource_id="res-123",
                     filepath="/docs/PTO_Policy.pdf",
                     display_name="PTO_Policy.pdf",
                     relevance_score=0.95
@@ -604,19 +627,16 @@ class TestDocumentChunkRepository:
     """Tests for DocumentChunk and vector search operations."""
 
     def test_create_chunk(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
-
-        artifact_repo = ArtifactRepository(db)
-        artifact = artifact_repo.create(Artifact(
-            brain_id=brain.id,
-            artifact_type=ArtifactType.FILE,
-            name="test.txt"
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="test",
+            path="/test"
         ))
 
         chunk_repo = DocumentChunkRepository(db)
         chunk = DocumentChunk(
-            artifact_id=artifact.id,
+            resource_id=resource.id,
             filepath="/path/to/test.txt",
             chunk_index=0,
             start_char=0,
@@ -628,21 +648,18 @@ class TestDocumentChunkRepository:
 
         assert created.text == "This is a test document."
 
-    def test_get_chunks_by_artifact(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
-
-        artifact_repo = ArtifactRepository(db)
-        artifact = artifact_repo.create(Artifact(
-            brain_id=brain.id,
-            artifact_type=ArtifactType.FILE,
-            name="test.txt"
+    def test_get_chunks_by_resource(self, db):
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="test",
+            path="/test"
         ))
 
         chunk_repo = DocumentChunkRepository(db)
         for i in range(3):
             chunk_repo.create(DocumentChunk(
-                artifact_id=artifact.id,
+                resource_id=resource.id,
                 filepath="/path/to/test.txt",
                 chunk_index=i,
                 start_char=i * 100,
@@ -651,35 +668,32 @@ class TestDocumentChunkRepository:
                 embedding=[0.1] * 768
             ))
 
-        chunks = chunk_repo.get_by_artifact(artifact.id)
+        chunks = chunk_repo.get_by_resource(resource.id)
 
         assert len(chunks) == 3
         assert chunks[0].chunk_index == 0
         assert chunks[1].chunk_index == 1
 
-    def test_delete_chunks_by_artifact(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
-
-        artifact_repo = ArtifactRepository(db)
-        artifact = artifact_repo.create(Artifact(
-            brain_id=brain.id,
-            artifact_type=ArtifactType.FILE,
-            name="test.txt"
+    def test_delete_chunks_by_resource(self, db):
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="test",
+            path="/test"
         ))
 
         chunk_repo = DocumentChunkRepository(db)
         chunk_repo.create(DocumentChunk(
-            artifact_id=artifact.id,
+            resource_id=resource.id,
             filepath="/path/to/test.txt",
             chunk_index=0,
             text="Test",
             embedding=[0.1] * 768
         ))
 
-        chunk_repo.delete_by_artifact(artifact.id)
+        chunk_repo.delete_by_resource(resource.id)
 
-        chunks = chunk_repo.get_by_artifact(artifact.id)
+        chunks = chunk_repo.get_by_resource(resource.id)
         assert len(chunks) == 0
 
 
@@ -693,34 +707,38 @@ class TestRAGService:
         return [(h >> i & 0xFF) / 255.0 for i in range(768)]
 
     def test_index_text(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Vacation Policy",
+            path="/docs"
+        ))
 
         rag = RAGService(db)
-        artifact = rag.index_text(
-            brain_id=brain.id,
+        rag.index_text(
+            resource_id=resource.id,
             filepath="/docs/policy.txt",
             text="This is the company vacation policy. Employees get 20 days PTO.",
-            embedding_fn=self._mock_embedding,
-            name="Vacation Policy"
+            embedding_fn=self._mock_embedding
         )
 
-        assert artifact.name == "Vacation Policy"
-        assert artifact.index_status == IndexStatus.INDEXED
-
-        chunks = rag.chunks.get_by_artifact(artifact.id)
+        chunks = rag.chunks.get_by_resource(resource.id)
         assert len(chunks) >= 1
 
     def test_index_text_chunking(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Long Doc",
+            path="/docs"
+        ))
 
         # Create text that will be split into multiple chunks
         long_text = "This is sentence one. " * 100
 
         rag = RAGService(db)
-        artifact = rag.index_text(
-            brain_id=brain.id,
+        rag.index_text(
+            resource_id=resource.id,
             filepath="/docs/long.txt",
             text=long_text,
             embedding_fn=self._mock_embedding,
@@ -728,24 +746,28 @@ class TestRAGService:
             chunk_overlap=50
         )
 
-        chunks = rag.chunks.get_by_artifact(artifact.id)
+        chunks = rag.chunks.get_by_resource(resource.id)
         assert len(chunks) > 1
 
     def test_search(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Company Docs",
+            path="/docs"
+        ))
 
         rag = RAGService(db)
 
         # Index some documents
         rag.index_text(
-            brain_id=brain.id,
+            resource_id=resource.id,
             filepath="/docs/vacation.txt",
             text="Vacation policy: employees receive 20 days of paid time off per year.",
             embedding_fn=self._mock_embedding
         )
         rag.index_text(
-            brain_id=brain.id,
+            resource_id=resource.id,
             filepath="/docs/salary.txt",
             text="Salary information: compensation is reviewed annually in January.",
             embedding_fn=self._mock_embedding
@@ -753,103 +775,93 @@ class TestRAGService:
 
         # Search
         query_embedding = self._mock_embedding("How much PTO do I get?")
-        results = rag.search(query_embedding, brain_id=brain.id, limit=5)
+        results = rag.search(query_embedding, resource_ids=[resource.id], limit=5)
 
         assert len(results) == 2
-        assert all('chunk' in r and 'similarity' in r and 'artifact' in r for r in results)
+        assert all('chunk' in r and 'similarity' in r and 'resource' in r for r in results)
 
-    def test_search_filters_by_brain(self, db):
-        brain_repo = BrainRepository(db)
-        brain1 = brain_repo.create(Brain(name="Brain 1"))
-        brain2 = brain_repo.create(Brain(name="Brain 2"))
+    def test_search_filters_by_resource(self, db):
+        resource_repo = ResourceRepository(db)
+        resource1 = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Docs 1",
+            path="/docs1"
+        ))
+        resource2 = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Docs 2",
+            path="/docs2"
+        ))
 
         rag = RAGService(db)
 
         rag.index_text(
-            brain_id=brain1.id,
-            filepath="/docs/doc1.txt",
-            text="Document for brain one.",
+            resource_id=resource1.id,
+            filepath="/docs1/doc1.txt",
+            text="Document for resource one.",
             embedding_fn=self._mock_embedding
         )
         rag.index_text(
-            brain_id=brain2.id,
-            filepath="/docs/doc2.txt",
-            text="Document for brain two.",
+            resource_id=resource2.id,
+            filepath="/docs2/doc2.txt",
+            text="Document for resource two.",
             embedding_fn=self._mock_embedding
         )
 
         query_embedding = self._mock_embedding("document")
 
-        results1 = rag.search(query_embedding, brain_id=brain1.id)
-        results2 = rag.search(query_embedding, brain_id=brain2.id)
+        results1 = rag.search(query_embedding, resource_ids=[resource1.id])
+        results2 = rag.search(query_embedding, resource_ids=[resource2.id])
 
         assert len(results1) == 1
-        assert results1[0]['artifact'].brain_id == brain1.id
+        assert results1[0]['resource'].id == resource1.id
 
         assert len(results2) == 1
-        assert results2[0]['artifact'].brain_id == brain2.id
+        assert results2[0]['resource'].id == resource2.id
 
     def test_get_context(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Policy",
+            path="/docs"
+        ))
 
         rag = RAGService(db)
         rag.index_text(
-            brain_id=brain.id,
+            resource_id=resource.id,
             filepath="/docs/policy.txt",
             text="Company policy document with important information.",
-            embedding_fn=self._mock_embedding,
-            name="Policy"
+            embedding_fn=self._mock_embedding
         )
 
         query_embedding = self._mock_embedding("policy")
-        context = rag.get_context(query_embedding, brain_id=brain.id)
+        context = rag.get_context(query_embedding, resource_ids=[resource.id])
 
         assert "[Policy]" in context
         assert "important information" in context
 
-    def test_delete_artifact(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+    def test_delete_resource(self, db):
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Test",
+            path="/test"
+        ))
 
         rag = RAGService(db)
-        artifact = rag.index_text(
-            brain_id=brain.id,
-            filepath="/docs/test.txt",
+        rag.index_text(
+            resource_id=resource.id,
+            filepath="/test/test.txt",
             text="Test document content.",
             embedding_fn=self._mock_embedding
         )
 
-        artifact_id = artifact.id
-        rag.delete_artifact(artifact_id)
+        resource_id = resource.id
+        rag.delete_resource(resource_id)
 
-        assert rag.artifacts.get(artifact_id) is None
-        assert len(rag.chunks.get_by_artifact(artifact_id)) == 0
-
-    def test_index_failure_sets_status(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
-
-        def failing_embedding(text):
-            raise ValueError("Embedding failed")
-
-        rag = RAGService(db)
-
-        try:
-            rag.index_text(
-                brain_id=brain.id,
-                filepath="/docs/test.txt",
-                text="Some text",
-                embedding_fn=failing_embedding
-            )
-        except ValueError:
-            pass
-
-        # Check that artifact was created with FAILED status
-        artifacts = rag.artifacts.get_by_brain(brain.id)
-        assert len(artifacts) == 1
-        assert artifacts[0].index_status == IndexStatus.FAILED
-        assert "Embedding failed" in artifacts[0].index_error
+        assert rag.resources.get(resource_id) is None
+        assert len(rag.chunks.get_by_resource(resource_id)) == 0
 
     def test_chunk_text_sentence_boundaries(self, db):
         rag = RAGService(db)
@@ -866,20 +878,24 @@ class TestRAGService:
 
     def test_vector_similarity_search(self, db):
         """Test that vector search returns results ordered by similarity."""
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        resource_repo = ResourceRepository(db)
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER,
+            name="Mixed Docs",
+            path="/docs"
+        ))
 
         rag = RAGService(db)
 
         # Index documents with distinct content
         rag.index_text(
-            brain_id=brain.id,
+            resource_id=resource.id,
             filepath="/docs/python.txt",
             text="Python is a programming language used for web development and data science.",
             embedding_fn=self._mock_embedding
         )
         rag.index_text(
-            brain_id=brain.id,
+            resource_id=resource.id,
             filepath="/docs/cooking.txt",
             text="Cooking recipes for delicious pasta and Italian cuisine.",
             embedding_fn=self._mock_embedding
@@ -887,7 +903,7 @@ class TestRAGService:
 
         # Search for programming-related content
         query = self._mock_embedding("programming language")
-        results = rag.search(query, brain_id=brain.id)
+        results = rag.search(query, resource_ids=[resource.id])
 
         assert len(results) == 2
         # All results should have similarity scores

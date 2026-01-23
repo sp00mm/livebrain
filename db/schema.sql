@@ -23,23 +23,32 @@ CREATE TABLE IF NOT EXISTS questions (
 );
 CREATE INDEX IF NOT EXISTS idx_questions_brain ON questions(brain_id);
 
-CREATE TABLE IF NOT EXISTS artifacts (
+CREATE TABLE IF NOT EXISTS resources (
     id TEXT PRIMARY KEY,
-    brain_id TEXT NOT NULL,
-    artifact_type TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
     name TEXT NOT NULL,
-    metadata_json TEXT NOT NULL,
+    path TEXT NOT NULL,
+    size_bytes INTEGER,
+    file_count INTEGER,
     index_status TEXT NOT NULL DEFAULT 'pending',
     indexed_at TEXT,
     index_error TEXT,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (brain_id) REFERENCES brains(id) ON DELETE CASCADE
+    created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_artifacts_brain ON artifacts(brain_id);
+
+CREATE TABLE IF NOT EXISTS brain_resources (
+    brain_id TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (brain_id, resource_id),
+    FOREIGN KEY (brain_id) REFERENCES brains(id) ON DELETE CASCADE,
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_brain_resources_brain ON brain_resources(brain_id);
 
 CREATE TABLE IF NOT EXISTS document_chunks (
     id TEXT PRIMARY KEY,
-    artifact_id TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
     filepath TEXT NOT NULL,
     chunk_index INTEGER NOT NULL,
     start_char INTEGER NOT NULL,
@@ -47,9 +56,9 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     text TEXT NOT NULL,
     embedding f32_blob(768),
     created_at TEXT NOT NULL,
-    FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_chunks_artifact ON document_chunks(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_resource ON document_chunks(resource_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON document_chunks(libsql_vector_idx(embedding));
 
 CREATE TABLE IF NOT EXISTS sessions (

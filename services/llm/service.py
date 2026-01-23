@@ -18,17 +18,19 @@ class LLMService:
         return self._providers[name]
 
     def complete(self, messages: list[Message], config: Optional[ModelConfig] = None,
-                 system_prompt: Optional[str] = None) -> LLMResponse:
+                 system_prompt: Optional[str] = None,
+                 tools: Optional[list[dict]] = None) -> LLMResponse:
         config = config or self._default_config()
         provider = self._provider_for_model(config.model)
-        return provider.complete(messages, config, system_prompt)
+        return provider.complete(messages, config, system_prompt, tools)
 
     def stream(self, messages: list[Message], config: Optional[ModelConfig] = None,
                system_prompt: Optional[str] = None,
-               on_delta: Optional[StreamCallback] = None) -> Generator[str, None, LLMResponse]:
+               on_delta: Optional[StreamCallback] = None,
+               tools: Optional[list[dict]] = None) -> Generator[str, None, LLMResponse]:
         config = config or self._default_config()
         provider = self._provider_for_model(config.model)
-        return provider.stream(messages, config, system_prompt, on_delta)
+        return provider.stream(messages, config, system_prompt, on_delta, tools)
 
     def _create_provider(self, name: str) -> LLMProvider:
         api_key = self._get_api_key()

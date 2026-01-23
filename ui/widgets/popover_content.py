@@ -1,19 +1,19 @@
-import os
 from typing import TYPE_CHECKING, Optional
+import os
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLineEdit, QTextEdit, QLabel, QComboBox,
+    QLineEdit, QTextEdit, QLabel, QComboBox, QCheckBox,
     QScrollArea, QFrame, QProgressDialog, QMessageBox,
-    QStackedWidget, QSizePolicy
+    QStackedWidget, QSizePolicy, QFileDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 
 import qtawesome as qta
 
-from models import Session, TranscriptEntry, SpeakerType, QueryType, StepType, ExecutionStep, Brain, Question
+from models import Session, TranscriptEntry, SpeakerType, QueryType, StepType, ExecutionStep, Brain, Question, Resource, ResourceType, IndexStatus
 from services.embedder import Embedder
-from ui.threads import ModelDownloadThread, QueryExecutionThread
+from ui.threads import ModelDownloadThread, QueryExecutionThread, IndexThread, EstimateThread
 
 if TYPE_CHECKING:
     from menubar.app import MenuBarApp
@@ -191,6 +191,9 @@ class PopoverContent(QWidget):
         self._questions: list[Question] = []
         self._editing_brain: Optional[Brain] = None
         self._editing_question: Optional[Question] = None
+        self._resource_checkboxes: dict[str, QCheckBox] = {}
+        self._folder_status_label = None
+        self._folder_confirm_widget = None
 
         self.setStyleSheet(STYLE_SHEET)
         self._setup_ui()
@@ -208,6 +211,7 @@ class PopoverContent(QWidget):
         self._stack.addWidget(self._build_main_view())
         self._stack.addWidget(self._build_brain_edit_view())
         self._stack.addWidget(self._build_question_edit_view())
+        self._stack.addWidget(self._build_resources_view())
 
     def _build_main_view(self) -> QWidget:
         view = QWidget()
@@ -323,7 +327,7 @@ class PopoverContent(QWidget):
     def _build_brain_edit_view(self) -> QWidget:
         view = QWidget()
         layout = QVBoxLayout(view)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
         layout.setContentsMargins(16, 12, 16, 12)
 
         header = QHBoxLayout()
@@ -349,6 +353,29 @@ class PopoverContent(QWidget):
         layout.addWidget(QLabel('Description'))
         self._brain_desc_input = QLineEdit()
         layout.addWidget(self._brain_desc_input)
+
+        # Capabilities toggles
+        layout.addWidget(self._section_label('CAPABILITIES'))
+        self._conv_toggle = QCheckBox('Use conversation')
+        self._files_toggle = QCheckBox('Search linked resources')
+        self._web_toggle = QCheckBox('Search the web')
+        self._code_toggle = QCheckBox('Run code')
+        layout.addWidget(self._conv_toggle)
+        layout.addWidget(self._files_toggle)
+        layout.addWidget(self._web_toggle)
+        layout.addWidget(self._code_toggle)
+
+        # Resource links section
+        layout.addWidget(self._section_label('LINKED RESOURCES'))
+        self._resource_links_container = QWidget()
+        self._resource_links_layout = QVBoxLayout(self._resource_links_container)
+        self._resource_links_layout.setContentsMargins(0, 0, 0, 0)
+        self._resource_links_layout.setSpacing(4)
+        layout.addWidget(self._resource_links_container)
+
+        manage_btn = QPushButton('Manage Resources →')
+        manage_btn.clicked.connect(self._show_resources_view)
+        layout.addWidget(manage_btn)
 
         layout.addStretch()
 
@@ -491,6 +518,12 @@ class PopoverContent(QWidget):
         self._editing_brain = self._current_brain
         self._brain_name_input.setText(self._editing_brain.name)
         self._brain_desc_input.setText(self._editing_brain.description)
+        caps = self._editing_brain.capabilities
+        self._conv_toggle.setChecked(caps.conversation)
+        self._files_toggle.setChecked(caps.files)
+        self._web_toggle.setChecked(caps.web)
+        self._code_toggle.setChecked(caps.code)
+        self._load_resource_links()
         self._stack.setCurrentIndex(1)
 
     def _save_brain(self):
@@ -498,6 +531,18 @@ class PopoverContent(QWidget):
             return
         self._editing_brain.name = self._brain_name_input.text().strip() or 'Unnamed Brain'
         self._editing_brain.description = self._brain_desc_input.text().strip()
+        self._editing_brain.capabilities.conversation = self._conv_toggle.isChecked()
+        self._editing_brain.capabilities.files = self._files_toggle.isChecked()
+        self._editing_brain.capabilities.web = self._web_toggle.isChecked()
+        self._editing_brain.capabilities.code = self._code_toggle.isChecked()
+
+        current_links = set(r.id for r in self.app.resource_repo.get_by_brain(self._editing_brain.id))
+        new_links = set(rid for rid, cb in self._resource_checkboxes.items() if cb.isChecked())
+        for rid in current_links - new_links:
+            self.app.resource_repo.unlink_from_brain(rid, self._editing_brain.id)
+        for rid in new_links - current_links:
+            self.app.resource_repo.link_to_brain(rid, self._editing_brain.id)
+
         self.app.brain_repo.update(self._editing_brain)
         self._load_brains()
         self._stack.setCurrentIndex(0)
@@ -668,11 +713,291 @@ class PopoverContent(QWidget):
             StepType.SEARCHING_FILES: 'Searching files...',
             StepType.GENERATING: 'Thinking...'
         }
-        label = labels.get(step.step_type, str(step.step_type.value))
-        self._query_status.setText(label)
+        self._query_status.setText(labels.get(step.step_type, ''))
 
     def _on_query_delta(self, text: str):
         self._response.insertPlainText(text)
 
     def _on_query_complete(self, _response):
         self._query_status.setText('')
+
+    def _load_resource_links(self):
+        while self._resource_links_layout.count():
+            item = self._resource_links_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        self._resource_checkboxes = {}
+        if not self._editing_brain:
+            return
+
+        all_resources = self.app.resource_repo.get_all()
+        linked = set(r.id for r in self.app.resource_repo.get_by_brain(self._editing_brain.id))
+
+        for resource in all_resources:
+            icon = '📄' if resource.resource_type == ResourceType.FILE else '📁'
+            size_str = f'{resource.size_mb:.1f} MB' if resource.size_bytes else ''
+            label = f'{icon} {resource.name} ({size_str})' if size_str else f'{icon} {resource.name}'
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(resource.id in linked)
+            self._resource_checkboxes[resource.id] = checkbox
+            self._resource_links_layout.addWidget(checkbox)
+
+    def _build_resources_view(self) -> QWidget:
+        view = QWidget()
+        layout = QVBoxLayout(view)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 12, 16, 12)
+
+        # Header
+        header = QHBoxLayout()
+        back_btn = QPushButton()
+        back_btn.setObjectName('iconBtn')
+        back_btn.setIcon(qta.icon('mdi.arrow-left', color='#6eb5ff'))
+        back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+        header.addWidget(back_btn)
+        header.addStretch()
+        title = QLabel('Resources')
+        title.setStyleSheet('font-weight: 600; font-size: 14px; color: #e0e0e0;')
+        header.addWidget(title)
+        header.addStretch()
+        header.addSpacing(28)
+        layout.addLayout(header)
+
+        # Files section
+        layout.addWidget(self._section_label('FILES'))
+        files_desc = QLabel('Images and PDFs sent directly to the AI')
+        files_desc.setStyleSheet('color: #666; font-size: 11px; margin-bottom: 4px;')
+        layout.addWidget(files_desc)
+        self._files_container = QWidget()
+        self._files_layout = QVBoxLayout(self._files_container)
+        self._files_layout.setContentsMargins(0, 0, 0, 0)
+        self._files_layout.setSpacing(4)
+        layout.addWidget(self._files_container)
+
+        add_files_btn = QPushButton('Add Files')
+        add_files_btn.clicked.connect(self._add_resource_files)
+        layout.addWidget(add_files_btn)
+
+        # Folders section
+        layout.addWidget(self._section_label('FOLDERS'))
+        folders_desc = QLabel('AI can search through these files')
+        folders_desc.setStyleSheet('color: #666; font-size: 11px; margin-bottom: 4px;')
+        layout.addWidget(folders_desc)
+        self._folders_container = QWidget()
+        self._folders_layout = QVBoxLayout(self._folders_container)
+        self._folders_layout.setContentsMargins(0, 0, 0, 0)
+        self._folders_layout.setSpacing(4)
+        layout.addWidget(self._folders_container)
+
+        add_folder_btn = QPushButton('Add Folder')
+        add_folder_btn.clicked.connect(self._add_resource_folder)
+        layout.addWidget(add_folder_btn)
+
+        layout.addStretch()
+        return view
+
+    def _show_resources_view(self):
+        self._load_resources()
+        self._stack.setCurrentIndex(3)
+
+    def _add_resource_files(self):
+        files, _ = QFileDialog.getOpenFileNames(
+            self, 'Select Files',
+            filter='Images & PDFs (*.png *.jpg *.jpeg *.gif *.webp *.pdf)'
+        )
+        for filepath in files:
+            resource = Resource(
+                resource_type=ResourceType.FILE,
+                name=os.path.basename(filepath),
+                path=filepath,
+                size_bytes=os.path.getsize(filepath),
+                file_count=1,
+                index_status=IndexStatus.INDEXED
+            )
+            self.app.resource_repo.create(resource)
+        self._load_resources()
+
+    def _add_resource_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, 'Select Folder')
+        if not folder:
+            return
+
+        self._pending_folder_path = folder
+        self._pending_folder_name = os.path.basename(folder)
+
+        # Show scanning status inline
+        self._show_folder_status(f'Scanning {self._pending_folder_name}...')
+
+        # Run estimation first
+        self._estimate_thread = EstimateThread(folder, self.app.scanner)
+        self._estimate_thread.complete.connect(self._on_estimation_complete)
+        self._estimate_thread.start()
+
+    def _show_folder_status(self, text: str, is_processing: bool = False):
+        self._clear_folder_status()
+        self._folder_status_label = QLabel(text)
+        color = '#6eb5ff' if is_processing else '#888'
+        self._folder_status_label.setStyleSheet(f'color: {color}; font-size: 12px; padding: 8px;')
+        self._folders_layout.addWidget(self._folder_status_label)
+
+    def _clear_folder_status(self):
+        if self._folder_status_label:
+            self._folder_status_label.deleteLater()
+            self._folder_status_label = None
+        if self._folder_confirm_widget:
+            self._folder_confirm_widget.deleteLater()
+            self._folder_confirm_widget = None
+
+    def _on_estimation_complete(self, total_bytes: int, file_count: int, paths: list):
+        self._clear_folder_status()
+        self._pending_paths = paths
+        self._pending_bytes = total_bytes
+        self._pending_file_count = file_count
+
+        size_mb = total_bytes / (1024 * 1024)
+        is_large = total_bytes > 100 * 1024 * 1024
+
+        # Show inline confirmation
+        self._folder_confirm_widget = QWidget()
+        layout = QVBoxLayout(self._folder_confirm_widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        info_text = f'{self._pending_folder_name}: {file_count} files ({size_mb:.1f} MB)'
+        if is_large:
+            info_text += '\n⚠️ This may take a while'
+        info_label = QLabel(info_text)
+        info_label.setStyleSheet('color: #d0d0d0;')
+        layout.addWidget(info_label)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        add_btn = QPushButton('Add')
+        add_btn.setStyleSheet('background-color: #2d4a2d; border-color: #3a5a3a;')
+        add_btn.clicked.connect(self._confirm_folder_index)
+        btn_row.addWidget(add_btn)
+
+        cancel_btn = QPushButton('Cancel')
+        cancel_btn.clicked.connect(self._cancel_folder_index)
+        btn_row.addWidget(cancel_btn)
+
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self._folders_layout.addWidget(self._folder_confirm_widget)
+
+    def _confirm_folder_index(self):
+        self._clear_folder_status()
+
+        # Create resource now that user confirmed
+        resource = Resource(
+            resource_type=ResourceType.FOLDER,
+            name=self._pending_folder_name,
+            path=self._pending_folder_path,
+            index_status=IndexStatus.INDEXING
+        )
+        self.app.resource_repo.create(resource)
+        self._current_indexing_resource = resource
+
+        # Show progress inline
+        self._show_folder_status(f'Processing 0/{self._pending_file_count}...', is_processing=True)
+
+        # Start actual indexing
+        self._index_thread = IndexThread(
+            resource=resource,
+            paths=self._pending_paths,
+            embedder=self.app.embedder,
+            scanner=self.app.scanner,
+            rag=self.app.rag
+        )
+        self._index_thread.file_progress.connect(self._on_file_progress)
+        self._index_thread.complete.connect(self._on_indexing_complete)
+        self._index_thread.start()
+
+    def _cancel_folder_index(self):
+        self._clear_folder_status()
+        self._load_resources()
+
+    def _on_file_progress(self, filename: str, current: int, total: int):
+        if self._folder_status_label:
+            self._folder_status_label.setText(f'Processing {current}/{total}: {filename}')
+
+    def _on_indexing_complete(self, total_bytes: int, file_count: int):
+        self._clear_folder_status()
+        self.app.resource_repo.update_index_status(
+            self._current_indexing_resource.id, IndexStatus.INDEXED,
+            size_bytes=total_bytes, file_count=file_count
+        )
+        self._load_resources()
+
+    def _load_resources(self):
+        # Load files
+        while self._files_layout.count():
+            item = self._files_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # Load folders
+        while self._folders_layout.count():
+            item = self._folders_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        all_resources = self.app.resource_repo.get_all()
+
+        for resource in all_resources:
+            row = QHBoxLayout()
+            icon_name = 'mdi.file' if resource.resource_type == ResourceType.FILE else 'mdi.folder'
+            icon_label = QLabel()
+            icon_label.setPixmap(qta.icon(icon_name, color='#888').pixmap(16, 16))
+            row.addWidget(icon_label)
+
+            name_label = QLabel(resource.name)
+            name_label.setStyleSheet('color: #d0d0d0;')
+            row.addWidget(name_label)
+
+            if resource.size_bytes:
+                size_label = QLabel(f'{resource.size_mb:.1f} MB')
+                size_label.setStyleSheet('color: #666; font-size: 11px;')
+                row.addWidget(size_label)
+
+            if resource.resource_type == ResourceType.FOLDER:
+                if resource.file_count:
+                    count_label = QLabel(f'{resource.file_count} files')
+                    count_label.setStyleSheet('color: #666; font-size: 11px;')
+                    row.addWidget(count_label)
+
+                status_map = {
+                    IndexStatus.PENDING: 'Waiting...',
+                    IndexStatus.INDEXING: 'Processing...',
+                    IndexStatus.INDEXED: 'Ready',
+                    IndexStatus.FAILED: 'Failed'
+                }
+                status_text = status_map.get(resource.index_status, resource.index_status.value)
+                status_color = '#4CAF50' if resource.index_status == IndexStatus.INDEXED else '#666'
+                status_label = QLabel(status_text)
+                status_label.setStyleSheet(f'color: {status_color}; font-size: 11px;')
+                row.addWidget(status_label)
+
+            delete_btn = QPushButton()
+            delete_btn.setObjectName('iconBtn')
+            delete_btn.setIcon(qta.icon('mdi.close', color='#666'))
+            delete_btn.setFixedSize(20, 20)
+            delete_btn.clicked.connect(lambda checked, r=resource: self._delete_resource(r))
+            row.addWidget(delete_btn)
+            row.addStretch()
+
+            container = QWidget()
+            container.setLayout(row)
+
+            if resource.resource_type == ResourceType.FILE:
+                self._files_layout.addWidget(container)
+            else:
+                self._folders_layout.addWidget(container)
+
+    def _delete_resource(self, resource: Resource):
+        self.app.rag.delete_resource(resource.id)
+        self._load_resources()
+        self._load_resource_links()

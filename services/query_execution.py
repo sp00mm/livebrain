@@ -4,11 +4,11 @@ import time
 
 from models import (
     Brain, Interaction, AIResponse, ExecutionStep, FileReference,
-    QueryType, StepType, StepStatus, ModelConfig, BrainCapabilities
+    QueryType, StepType, StepStatus, ModelConfig, BrainCapabilities, ResourceType
 )
 from services.database import (
     Database, QuestionRepository, TranscriptEntryRepository,
-    InteractionRepository, AIResponseRepository, ExecutionStepRepository, RAGService
+    InteractionRepository, AIResponseRepository, ExecutionStepRepository, RAGService, ResourceRepository
 )
 from services.llm import LLMService, Message
 
@@ -38,6 +38,7 @@ class QueryExecutionService:
         self._interaction_repo = InteractionRepository(db)
         self._response_repo = AIResponseRepository(db)
         self._step_repo = ExecutionStepRepository(db)
+        self._resource_repo = ResourceRepository(db)
         self._llm = LLMService(db)
         self._rag = RAGService(db)
 
@@ -51,7 +52,7 @@ class QueryExecutionService:
         rag_context = ''
         file_refs = []
         transcript_ids = []
-        artifact_ids = []
+        resource_ids = []
 
         if capabilities.conversation:
             step = self._emit_step(interaction.id, StepType.LISTENING, callbacks.on_step)
@@ -59,13 +60,18 @@ class QueryExecutionService:
             self._complete_step(step.id, callbacks.on_step)
 
         if capabilities.files:
-            step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
-            rag_context, file_refs, artifact_ids = self._gather_rag_context(ctx.brain.id, ctx.query_text)
-            self._complete_step(step.id, callbacks.on_step)
+            linked_resources = self._resource_repo.get_by_brain(ctx.brain.id)
+            linked_ids = [r.id for r in linked_resources]
+            if linked_ids:
+                step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
+                rag_context, file_refs, resource_ids = self._gather_rag_context(linked_ids, ctx.query_text)
+                self._complete_step(step.id, callbacks.on_step)
+
+        tools = self._build_tools(capabilities)
 
         # Update interaction with context snapshots
         interaction.transcript_snapshot = transcript_ids
-        interaction.artifacts_used = artifact_ids
+        interaction.resources_used = resource_ids
         self._interaction_repo.update(interaction)
 
         messages = self._build_messages(ctx.query_text, transcript_text, rag_context)
@@ -76,7 +82,8 @@ class QueryExecutionService:
 
         gen = self._llm.stream(
             messages, config, system_prompt,
-            lambda delta, is_final: callbacks.on_delta(delta) if not is_final else None
+            lambda delta, is_final: callbacks.on_delta(delta) if not is_final else None,
+            tools=tools
         )
         while True:
             try:
@@ -142,33 +149,41 @@ class QueryExecutionService:
         ids = [e.id for e in entries]
         return '\n'.join(lines), ids
 
-    def _gather_rag_context(self, brain_id: str, query: str) -> tuple[str, list[FileReference], list[str]]:
+    def _gather_rag_context(self, resource_ids: list[str], query: str) -> tuple[str, list[FileReference], list[str]]:
+        folder_ids = [
+            rid for rid in resource_ids
+            if (r := self._resource_repo.get(rid)) and r.resource_type == ResourceType.FOLDER
+        ]
+
+        if not folder_ids:
+            return '', [], []
+
         embedding = self.embedder.embed(query, is_query=True)
-        results = self._rag.search(embedding, brain_id=brain_id, limit=10)
+        results = self._rag.search(embedding, resource_ids=folder_ids, limit=10)
 
         context_parts = []
         file_refs = []
-        artifact_ids = []
-        seen_artifacts = set()
+        used_resource_ids = []
+        seen_resources = set()
 
         for r in results:
-            artifact = r['artifact']
+            resource = r['resource']
             chunk = r['chunk']
             similarity = r['similarity']
 
-            context_parts.append(f'[{artifact.name}]\n{chunk.text}')
+            context_parts.append(f'[{resource.name}]\n{chunk.text}')
 
-            if artifact.id not in seen_artifacts:
-                seen_artifacts.add(artifact.id)
-                artifact_ids.append(artifact.id)
+            if resource.id not in seen_resources:
+                seen_resources.add(resource.id)
+                used_resource_ids.append(resource.id)
                 file_refs.append(FileReference(
-                    artifact_id=artifact.id,
+                    resource_id=resource.id,
                     filepath=chunk.filepath,
-                    display_name=artifact.name,
+                    display_name=resource.name,
                     relevance_score=similarity
                 ))
 
-        return '\n---\n'.join(context_parts), file_refs, artifact_ids
+        return '\n---\n'.join(context_parts), file_refs, used_resource_ids
 
     def _build_messages(self, query: str, transcript: str, rag_context: str) -> list[Message]:
         content_parts = []
@@ -189,3 +204,11 @@ class QueryExecutionService:
             prompt += f'\n{brain.description}'
         prompt += '\n\nAnswer questions based on the provided context. Reference files when relevant.'
         return prompt
+
+    def _build_tools(self, capabilities: BrainCapabilities) -> list[dict] | None:
+        tools = []
+        if capabilities.web:
+            tools.append({'type': 'web_search'})
+        if capabilities.code:
+            tools.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
+        return tools or None

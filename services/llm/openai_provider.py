@@ -11,14 +11,18 @@ class OpenAIProvider(LLMProvider):
         self._client = OpenAI(api_key=api_key)
 
     def complete(self, messages: list[Message], config: ModelConfig,
-                 system_prompt: Optional[str] = None) -> LLMResponse:
-        response = self._client.responses.create(
-            model=config.model,
-            input=self._build_input(messages),
-            instructions=system_prompt,
-            temperature=config.temperature,
-            max_output_tokens=config.max_tokens,
-        )
+                 system_prompt: Optional[str] = None,
+                 tools: Optional[list[dict]] = None) -> LLMResponse:
+        kwargs = {
+            'model': config.model,
+            'input': self._build_input(messages),
+            'instructions': system_prompt,
+            'temperature': config.temperature,
+            'max_output_tokens': config.max_tokens,
+        }
+        if tools:
+            kwargs['tools'] = tools
+        response = self._client.responses.create(**kwargs)
         return LLMResponse(
             text=response.output_text,
             model=config.model,
@@ -28,13 +32,17 @@ class OpenAIProvider(LLMProvider):
 
     def stream(self, messages: list[Message], config: ModelConfig,
                system_prompt: Optional[str] = None,
-               on_delta: Optional[StreamCallback] = None) -> Generator[str, None, LLMResponse]:
-        stream = self._client.responses.create(
-            model=config.model,
-            input=self._build_input(messages),
-            instructions=system_prompt,
-            stream=True,
-        )
+               on_delta: Optional[StreamCallback] = None,
+               tools: Optional[list[dict]] = None) -> Generator[str, None, LLMResponse]:
+        kwargs = {
+            'model': config.model,
+            'input': self._build_input(messages),
+            'instructions': system_prompt,
+            'stream': True,
+        }
+        if tools:
+            kwargs['tools'] = tools
+        stream = self._client.responses.create(**kwargs)
         full_text = ''
         usage = None
         for event in stream:

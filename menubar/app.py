@@ -8,7 +8,7 @@ from AppKit import NSApp
 
 from services.embedder import Embedder
 from services.scanner import FileScanner
-from services.database import Database, RAGService, UserSettingsRepository, BrainRepository, QuestionRepository
+from services.database import Database, RAGService, UserSettingsRepository, BrainRepository, QuestionRepository, ResourceRepository
 from services.updater import Updater
 from services.audio_service import AudioService
 from models import Brain
@@ -35,6 +35,7 @@ class MenuBarApp:
         self.settings_repo = UserSettingsRepository(self.db)
         self.brain_repo = BrainRepository(self.db)
         self.question_repo = QuestionRepository(self.db)
+        self.resource_repo = ResourceRepository(self.db)
         self.updater = Updater()
         self.audio_service = AudioService(self.db)
         self.embedder: Optional[Embedder] = None

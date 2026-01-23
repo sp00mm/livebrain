@@ -1,0 +1,322 @@
+"""
+Livebrain Data Models
+
+Core entities for brains, sessions, transcripts, and AI interactions.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Optional
+import uuid
+
+
+def generate_id() -> str:
+    """Generate a new UUID string."""
+    return str(uuid.uuid4())
+
+
+def now() -> datetime:
+    """Get current UTC datetime."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+class SpeakerType(Enum):
+    USER = "user"      # Microphone (you)
+    OTHER = "other"    # System audio (them)
+
+
+class QueryType(Enum):
+    PRESET = "preset"      # Clicked a question
+    FREEFORM = "freeform"  # Typed in input box
+
+
+class ResourceType(Enum):
+    FILE = 'file'      # Images + PDFs - direct LLM upload, NO RAG
+    FOLDER = 'folder'  # RAG-scanned with embeddings
+
+
+class IndexStatus(Enum):
+    PENDING = "pending"
+    INDEXING = "indexing"
+    INDEXED = "indexed"
+    FAILED = "failed"
+
+
+class StepType(Enum):
+    LISTENING = 'listening'
+    SEARCHING_FILES = 'searching_files'
+    MCP_CALL = 'mcp_call'
+    GENERATING = 'generating'
+
+
+class StepStatus(Enum):
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class MCPStatus(Enum):
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    ERROR = "error"
+
+
+# =============================================================================
+# Configuration Models
+# =============================================================================
+
+@dataclass
+class ModelConfig:
+    """Generic LLM configuration passed to llmgateway API."""
+    model: str                                    # e.g., "gpt-4o", "claude-3-sonnet"
+    temperature: float = 0.7
+    max_tokens: Optional[int] = None
+    top_p: Optional[float] = None
+    presence_penalty: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    extra_params: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dict for API calls."""
+        result = {"model": self.model, "temperature": self.temperature}
+        if self.max_tokens is not None:
+            result["max_tokens"] = self.max_tokens
+        if self.top_p is not None:
+            result["top_p"] = self.top_p
+        if self.presence_penalty is not None:
+            result["presence_penalty"] = self.presence_penalty
+        if self.frequency_penalty is not None:
+            result["frequency_penalty"] = self.frequency_penalty
+        result.update(self.extra_params)
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ModelConfig":
+        """Create from dict."""
+        known_keys = {"model", "temperature", "max_tokens", "top_p",
+                      "presence_penalty", "frequency_penalty"}
+        extra = {k: v for k, v in data.items() if k not in known_keys}
+        return cls(
+            model=data.get('model', 'gpt-5-chat-latest'),
+            temperature=data.get("temperature", 0.7),
+            max_tokens=data.get("max_tokens"),
+            top_p=data.get("top_p"),
+            presence_penalty=data.get("presence_penalty"),
+            frequency_penalty=data.get("frequency_penalty"),
+            extra_params=extra
+        )
+
+
+@dataclass
+class BrainCapabilities:
+    """Enabled tools/capabilities for a brain."""
+    conversation: bool = True
+    files: bool = True
+    images: bool = True
+    code: bool = False
+    web: bool = False
+    mcp_servers: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            'conversation': self.conversation,
+            'files': self.files,
+            'images': self.images,
+            'code': self.code,
+            'web': self.web,
+            'mcp_servers': self.mcp_servers
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> 'BrainCapabilities':
+        return cls(
+            conversation=data.get('conversation', True),
+            files=data.get('files', True),
+            images=data.get('images', True),
+            code=data.get('code', False),
+            web=data.get('web', False),
+            mcp_servers=data.get('mcp_servers', [])
+        )
+
+
+# =============================================================================
+# Core Entities
+# =============================================================================
+
+@dataclass
+class Brain:
+    """A brain is a configuration object defining reasoning behavior and context."""
+    id: str = field(default_factory=generate_id)
+    name: str = ""
+    description: str = ""
+    default_model_config: ModelConfig = field(default_factory=lambda: ModelConfig(model='gpt-5-chat-latest'))
+    capabilities: BrainCapabilities = field(default_factory=BrainCapabilities)
+    created_at: datetime = field(default_factory=now)
+    updated_at: datetime = field(default_factory=now)
+
+
+@dataclass
+class Question:
+    """A predefined prompt with its own execution configuration."""
+    id: str = field(default_factory=generate_id)
+    brain_id: str = ""
+    text: str = ""
+    position: int = 0
+    model_config_override: Optional[ModelConfig] = None
+    capabilities_override: Optional[BrainCapabilities] = None
+    created_at: datetime = field(default_factory=now)
+    updated_at: datetime = field(default_factory=now)
+
+
+@dataclass
+class Resource:
+    """Global resource (file or folder) that can be linked to brains."""
+    id: str = field(default_factory=generate_id)
+    resource_type: ResourceType = ResourceType.FILE
+    name: str = ''
+    path: str = ''
+    size_bytes: Optional[int] = None
+    file_count: Optional[int] = None
+    index_status: IndexStatus = IndexStatus.PENDING
+    indexed_at: Optional[datetime] = None
+    index_error: Optional[str] = None
+    created_at: datetime = field(default_factory=now)
+
+    @property
+    def size_mb(self) -> float:
+        return (self.size_bytes or 0) / (1024 * 1024)
+
+
+@dataclass
+class DocumentChunk:
+    """Indexed text chunk for semantic retrieval (RAG)."""
+    id: str = field(default_factory=generate_id)
+    resource_id: str = ''
+    filepath: str = ''
+    chunk_index: int = 0
+    start_char: int = 0
+    end_char: int = 0
+    text: str = ''
+    embedding: list[float] = field(default_factory=list)
+    created_at: datetime = field(default_factory=now)
+
+
+@dataclass
+class Session:
+    """A recording session with live transcription and interaction history."""
+    id: str = field(default_factory=generate_id)
+    name: str = ""
+    audio_input_device: Optional[str] = None
+    audio_output_device: Optional[str] = None
+    is_live: bool = False
+    current_brain_id: Optional[str] = None
+    created_at: datetime = field(default_factory=now)
+    ended_at: Optional[datetime] = None
+
+
+@dataclass
+class TranscriptEntry:
+    """A single utterance in the conversation transcript."""
+    id: str = field(default_factory=generate_id)
+    session_id: str = ""
+    speaker: SpeakerType = SpeakerType.USER
+    text: str = ""
+    confidence: float = 1.0
+    timestamp: datetime = field(default_factory=now)
+
+
+@dataclass
+class Interaction:
+    """A user query and AI response within a session."""
+    id: str = field(default_factory=generate_id)
+    session_id: str = ''
+    brain_id: str = ''
+    question_id: Optional[str] = None
+    query_type: QueryType = QueryType.FREEFORM
+    query_text: str = ''
+    transcript_snapshot: list[str] = field(default_factory=list)  # TranscriptEntry IDs
+    resources_used: list[str] = field(default_factory=list)       # Resource IDs
+    created_at: datetime = field(default_factory=now)
+
+
+@dataclass
+class FileReference:
+    """A file referenced in an AI response."""
+    resource_id: str = ''
+    filepath: str = ''
+    display_name: str = ''
+    relevance_score: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            'resource_id': self.resource_id,
+            'filepath': self.filepath,
+            'display_name': self.display_name,
+            'relevance_score': self.relevance_score
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> 'FileReference':
+        return cls(
+            resource_id=data.get('resource_id', ''),
+            filepath=data.get('filepath', ''),
+            display_name=data.get('display_name', ''),
+            relevance_score=data.get('relevance_score', 0.0)
+        )
+
+
+@dataclass
+class AIResponse:
+    """The generated response from the AI."""
+    id: str = field(default_factory=generate_id)
+    interaction_id: str = ""
+    text: str = ""
+    file_references: list[FileReference] = field(default_factory=list)
+    model_used: str = ""
+    tokens_input: int = 0
+    tokens_output: int = 0
+    latency_ms: int = 0
+    created_at: datetime = field(default_factory=now)
+
+
+@dataclass
+class ExecutionStep:
+    """Tracks the 'working' states shown to user during AI processing."""
+    id: str = field(default_factory=generate_id)
+    interaction_id: str = ""
+    step_type: StepType = StepType.GENERATING
+    status: StepStatus = StepStatus.IN_PROGRESS
+    details: Optional[str] = None
+    started_at: datetime = field(default_factory=now)
+    completed_at: Optional[datetime] = None
+
+
+@dataclass
+class MCPServer:
+    """External tool integration via Model Context Protocol."""
+    id: str = field(default_factory=generate_id)
+    name: str = ""               # "notion", "slack"
+    display_name: str = ""       # "Notion"
+    server_command: str = ""     # Command to start server
+    status: MCPStatus = MCPStatus.DISCONNECTED
+    capabilities: list[str] = field(default_factory=list)
+
+
+@dataclass
+class UserSettings:
+    """Global application settings."""
+    default_input_device: Optional[str] = None
+    default_output_device: Optional[str] = None
+    default_brain_id: Optional[str] = None
+    show_transcript: bool = True
+    transcript_max_lines: int = 10
+    api_key_encrypted: Optional[str] = None
+    preferred_model: str = 'gpt-5-chat-latest'
+    data_directory: Optional[str] = None
+    max_session_storage_days: int = 30

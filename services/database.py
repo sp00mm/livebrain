@@ -14,10 +14,10 @@ from typing import Optional
 import libsql
 
 from models import (
-    Brain, Question, Artifact, DocumentChunk, Session,
+    Brain, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
     MCPServer, UserSettings, ModelConfig, BrainCapabilities,
-    FileReference, SpeakerType, QueryType, ArtifactType,
+    FileReference, SpeakerType, QueryType, ResourceType,
     IndexStatus, StepType, StepStatus, MCPStatus
 )
 
@@ -226,74 +226,117 @@ class QuestionRepository:
 
 
 # =============================================================================
-# Repository: Artifacts
+# Repository: Resources
 # =============================================================================
 
-class ArtifactRepository:
-    """CRUD operations for Artifact entities."""
+class ResourceRepository:
+    """CRUD operations for Resource entities."""
 
     def __init__(self, db: Database):
         self.db = db
         self.conn = db.conn
 
-    def create(self, artifact: Artifact) -> Artifact:
+    def create(self, resource: Resource) -> Resource:
         self.conn.execute("""
-            INSERT INTO artifacts (id, brain_id, artifact_type, name, metadata_json,
-                                 index_status, indexed_at, index_error, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO resources (id, resource_type, name, path, size_bytes,
+                                  file_count, index_status, indexed_at, index_error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [
-            artifact.id,
-            artifact.brain_id,
-            artifact.artifact_type.value,
-            artifact.name,
-            json.dumps(artifact.metadata),
-            artifact.index_status.value,
-            _dt_to_str(artifact.indexed_at),
-            artifact.index_error,
-            _dt_to_str(artifact.created_at)
+            resource.id,
+            resource.resource_type.value,
+            resource.name,
+            resource.path,
+            resource.size_bytes,
+            resource.file_count,
+            resource.index_status.value,
+            _dt_to_str(resource.indexed_at),
+            resource.index_error,
+            _dt_to_str(resource.created_at)
         ])
         self.conn.commit()
-        return artifact
+        return resource
 
-    def get(self, artifact_id: str) -> Optional[Artifact]:
+    def get(self, resource_id: str) -> Optional[Resource]:
         cursor = self.conn.execute(
-            "SELECT * FROM artifacts WHERE id = ?", [artifact_id]
+            'SELECT * FROM resources WHERE id = ?', [resource_id]
         )
         row = cursor.fetchone()
-        return self._row_to_artifact(row) if row else None
+        return self._row_to_resource(row) if row else None
 
-    def get_by_brain(self, brain_id: str) -> list[Artifact]:
-        cursor = self.conn.execute(
-            "SELECT * FROM artifacts WHERE brain_id = ? ORDER BY created_at DESC",
-            [brain_id]
-        )
-        return [self._row_to_artifact(row) for row in cursor.fetchall()]
+    def get_all(self) -> list[Resource]:
+        cursor = self.conn.execute('SELECT * FROM resources ORDER BY created_at DESC')
+        return [self._row_to_resource(row) for row in cursor.fetchall()]
 
-    def update_index_status(self, artifact_id: str, status: IndexStatus,
+    def get_by_brain(self, brain_id: str) -> list[Resource]:
+        cursor = self.conn.execute('''
+            SELECT r.* FROM resources r
+            JOIN brain_resources br ON br.resource_id = r.id
+            WHERE br.brain_id = ?
+            ORDER BY r.created_at DESC
+        ''', [brain_id])
+        return [self._row_to_resource(row) for row in cursor.fetchall()]
+
+    def update(self, resource: Resource) -> Resource:
+        self.conn.execute('''
+            UPDATE resources SET name = ?, path = ?, size_bytes = ?,
+                               file_count = ?, index_status = ?, indexed_at = ?, index_error = ?
+            WHERE id = ?
+        ''', [
+            resource.name,
+            resource.path,
+            resource.size_bytes,
+            resource.file_count,
+            resource.index_status.value,
+            _dt_to_str(resource.indexed_at),
+            resource.index_error,
+            resource.id
+        ])
+        self.conn.commit()
+        return resource
+
+    def update_index_status(self, resource_id: str, status: IndexStatus,
+                           size_bytes: Optional[int] = None, file_count: Optional[int] = None,
                            error: Optional[str] = None) -> None:
         indexed_at = _dt_to_str(datetime.now(timezone.utc).replace(tzinfo=None)) if status == IndexStatus.INDEXED else None
-        self.conn.execute("""
-            UPDATE artifacts SET index_status = ?, indexed_at = ?, index_error = ?
+        self.conn.execute('''
+            UPDATE resources SET index_status = ?, indexed_at = ?, index_error = ?,
+                               size_bytes = COALESCE(?, size_bytes),
+                               file_count = COALESCE(?, file_count)
             WHERE id = ?
-        """, [status.value, indexed_at, error, artifact_id])
+        ''', [status.value, indexed_at, error, size_bytes, file_count, resource_id])
         self.conn.commit()
 
-    def delete(self, artifact_id: str) -> bool:
-        self.conn.execute("DELETE FROM artifacts WHERE id = ?", [artifact_id])
+    def delete(self, resource_id: str) -> bool:
+        self.conn.execute('DELETE FROM resources WHERE id = ?', [resource_id])
         self.conn.commit()
         return True
 
-    def _row_to_artifact(self, row) -> Artifact:
-        return Artifact(
+    def link_to_brain(self, resource_id: str, brain_id: str) -> None:
+        self.conn.execute('''
+            INSERT OR IGNORE INTO brain_resources (brain_id, resource_id, created_at)
+            VALUES (?, ?, ?)
+        ''', [brain_id, resource_id, _dt_to_str(datetime.now(timezone.utc).replace(tzinfo=None))])
+        self.conn.commit()
+
+    def unlink_from_brain(self, resource_id: str, brain_id: str) -> None:
+        self.conn.execute(
+            'DELETE FROM brain_resources WHERE brain_id = ? AND resource_id = ?',
+            [brain_id, resource_id]
+        )
+        self.conn.commit()
+
+    def _row_to_resource(self, row) -> Resource:
+        return Resource(
             id=row[0],
-            brain_id=row[1],
-            artifact_type=ArtifactType(row[2]),
-            name=row[3],
-            metadata=json.loads(row[4]),
-            index_status=IndexStatus(row[5]),
-            indexed_at=_str_to_dt(row[6]),
-            index_error=row[7],
-            created_at=_str_to_dt(row[8])
+            resource_type=ResourceType(row[1]),
+            name=row[2],
+            path=row[3],
+            size_bytes=row[4],
+            file_count=row[5],
+            index_status=IndexStatus(row[6]),
+            indexed_at=_str_to_dt(row[7]),
+            index_error=row[8],
+            created_at=_str_to_dt(row[9])
         )
 
 
@@ -310,13 +353,13 @@ class DocumentChunkRepository:
 
     def create(self, chunk: DocumentChunk) -> DocumentChunk:
         embedding_json = json.dumps(chunk.embedding)
-        self.conn.execute("""
-            INSERT INTO document_chunks (id, artifact_id, filepath, chunk_index,
+        self.conn.execute('''
+            INSERT INTO document_chunks (id, resource_id, filepath, chunk_index,
                                         start_char, end_char, text, embedding, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, vector32(?), ?)
-        """, [
+        ''', [
             chunk.id,
-            chunk.artifact_id,
+            chunk.resource_id,
             chunk.filepath,
             chunk.chunk_index,
             chunk.start_char,
@@ -329,69 +372,65 @@ class DocumentChunkRepository:
         return chunk
 
     def create_many(self, chunks: list[DocumentChunk]) -> None:
-        """Batch insert multiple chunks."""
         for chunk in chunks:
             self.create(chunk)
 
-    def get_by_artifact(self, artifact_id: str) -> list[DocumentChunk]:
+    def get_by_resource(self, resource_id: str) -> list[DocumentChunk]:
         cursor = self.conn.execute(
-            "SELECT id, artifact_id, filepath, chunk_index, start_char, end_char, text, created_at "
-            "FROM document_chunks WHERE artifact_id = ? ORDER BY chunk_index",
-            [artifact_id]
+            'SELECT id, resource_id, filepath, chunk_index, start_char, end_char, text, created_at '
+            'FROM document_chunks WHERE resource_id = ? ORDER BY chunk_index',
+            [resource_id]
         )
         return [self._row_to_chunk(row) for row in cursor.fetchall()]
 
-    def delete_by_artifact(self, artifact_id: str) -> None:
-        self.conn.execute("DELETE FROM document_chunks WHERE artifact_id = ?", [artifact_id])
+    def delete_by_resource(self, resource_id: str) -> None:
+        self.conn.execute('DELETE FROM document_chunks WHERE resource_id = ?', [resource_id])
         self.conn.commit()
 
     def search(self, query_embedding: list[float], limit: int = 10,
-              brain_id: Optional[str] = None) -> list[tuple[DocumentChunk, float]]:
-        """
-        Search for similar chunks using vector similarity.
-        Returns list of (chunk, similarity_score) tuples.
-        """
+              resource_ids: Optional[list[str]] = None) -> list[tuple[DocumentChunk, float]]:
+        """Search for similar chunks using vector similarity.
+        Returns list of (chunk, similarity_score) tuples."""
         embedding_json = json.dumps(query_embedding)
 
-        if brain_id:
-            # Filter by brain via artifacts
-            cursor = self.conn.execute("""
-                SELECT dc.id, dc.artifact_id, dc.filepath, dc.chunk_index,
+        if resource_ids:
+            placeholders = ','.join(['?'] * len(resource_ids))
+            cursor = self.conn.execute(f'''
+                SELECT dc.id, dc.resource_id, dc.filepath, dc.chunk_index,
                        dc.start_char, dc.end_char, dc.text, dc.created_at,
                        vector_distance_cos(dc.embedding, vector32(?)) as distance
                 FROM vector_top_k('idx_chunks_embedding', vector32(?), ?) as vtk
                 JOIN document_chunks dc ON dc.rowid = vtk.id
-                JOIN artifacts a ON a.id = dc.artifact_id
-                WHERE a.brain_id = ?
+                WHERE dc.resource_id IN ({placeholders})
                 ORDER BY distance ASC
-            """, [embedding_json, embedding_json, limit * 2, brain_id])
+            ''', [embedding_json, embedding_json, limit * 2] + resource_ids)
         else:
-            cursor = self.conn.execute("""
-                SELECT dc.id, dc.artifact_id, dc.filepath, dc.chunk_index,
+            cursor = self.conn.execute('''
+                SELECT dc.id, dc.resource_id, dc.filepath, dc.chunk_index,
                        dc.start_char, dc.end_char, dc.text, dc.created_at,
                        vector_distance_cos(dc.embedding, vector32(?)) as distance
                 FROM vector_top_k('idx_chunks_embedding', vector32(?), ?) as vtk
                 JOIN document_chunks dc ON dc.rowid = vtk.id
                 ORDER BY distance ASC
-            """, [embedding_json, embedding_json, limit])
+            ''', [embedding_json, embedding_json, limit])
 
         results = []
         for row in cursor.fetchall()[:limit]:
             chunk = self._row_to_chunk(row[:8])
-            similarity = 1 - row[8]  # Convert distance to similarity
+            similarity = 1 - row[8]
             results.append((chunk, similarity))
         return results
 
     def _row_to_chunk(self, row) -> DocumentChunk:
         return DocumentChunk(
             id=row[0],
-            artifact_id=row[1],
+            resource_id=row[1],
             filepath=row[2],
             chunk_index=row[3],
             start_char=row[4],
             end_char=row[5],
             text=row[6],
-            embedding=[],  # Don't load embedding by default
+            embedding=[],
             created_at=_str_to_dt(row[7])
         )
 
@@ -551,12 +590,12 @@ class InteractionRepository:
         self.conn = db.conn
 
     def create(self, interaction: Interaction) -> Interaction:
-        self.conn.execute("""
+        self.conn.execute('''
             INSERT INTO interactions (id, session_id, brain_id, question_id,
                                      query_type, query_text, transcript_snapshot_json,
                                      artifacts_used_json, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
+        ''', [
             interaction.id,
             interaction.session_id,
             interaction.brain_id,
@@ -564,7 +603,7 @@ class InteractionRepository:
             interaction.query_type.value,
             interaction.query_text,
             json.dumps(interaction.transcript_snapshot),
-            json.dumps(interaction.artifacts_used),
+            json.dumps(interaction.resources_used),
             _dt_to_str(interaction.created_at)
         ])
         self.conn.commit()
@@ -572,27 +611,27 @@ class InteractionRepository:
 
     def get(self, interaction_id: str) -> Optional[Interaction]:
         cursor = self.conn.execute(
-            "SELECT * FROM interactions WHERE id = ?", [interaction_id]
+            'SELECT * FROM interactions WHERE id = ?', [interaction_id]
         )
         row = cursor.fetchone()
         return self._row_to_interaction(row) if row else None
 
     def get_by_session(self, session_id: str) -> list[Interaction]:
         cursor = self.conn.execute(
-            "SELECT * FROM interactions WHERE session_id = ? ORDER BY created_at",
+            'SELECT * FROM interactions WHERE session_id = ? ORDER BY created_at',
             [session_id]
         )
         return [self._row_to_interaction(row) for row in cursor.fetchall()]
 
     def update(self, interaction: Interaction) -> Interaction:
-        self.conn.execute("""
+        self.conn.execute('''
             UPDATE interactions SET
                 transcript_snapshot_json = ?,
                 artifacts_used_json = ?
             WHERE id = ?
-        """, [
+        ''', [
             json.dumps(interaction.transcript_snapshot),
-            json.dumps(interaction.artifacts_used),
+            json.dumps(interaction.resources_used),
             interaction.id
         ])
         self.conn.commit()
@@ -607,7 +646,7 @@ class InteractionRepository:
             query_type=QueryType(row[4]),
             query_text=row[5],
             transcript_snapshot=json.loads(row[6]) if row[6] else [],
-            artifacts_used=json.loads(row[7]) if row[7] else [],
+            resources_used=json.loads(row[7]) if row[7] else [],
             created_at=_str_to_dt(row[8])
         )
 
@@ -860,72 +899,54 @@ class RAGService:
 
     def __init__(self, db: Database):
         self.db = db
-        self.artifacts = ArtifactRepository(db)
+        self.resources = ResourceRepository(db)
         self.chunks = DocumentChunkRepository(db)
 
     def index_text(
         self,
-        brain_id: str,
+        resource_id: str,
         filepath: str,
         text: str,
         embedding_fn,
-        name: Optional[str] = None,
         chunk_size: int = 1000,
         chunk_overlap: int = 200
-    ) -> Artifact:
-        """Index text content into chunks with embeddings."""
-        import os as _os
-        artifact = Artifact(
-            brain_id=brain_id,
-            artifact_type=ArtifactType.FILE,
-            name=name or _os.path.basename(filepath),
-            metadata={"filepath": filepath},
-            index_status=IndexStatus.INDEXING
-        )
-        self.artifacts.create(artifact)
+    ) -> None:
+        """Index text content into chunks with embeddings for a resource."""
+        for i, (chunk_text, start, end) in enumerate(self._chunk_text(text, chunk_size, chunk_overlap)):
+            self.chunks.create(DocumentChunk(
+                resource_id=resource_id,
+                filepath=filepath,
+                chunk_index=i,
+                start_char=start,
+                end_char=end,
+                text=chunk_text,
+                embedding=embedding_fn(chunk_text)
+            ))
 
-        try:
-            for i, (chunk_text, start, end) in enumerate(self._chunk_text(text, chunk_size, chunk_overlap)):
-                self.chunks.create(DocumentChunk(
-                    artifact_id=artifact.id,
-                    filepath=filepath,
-                    chunk_index=i,
-                    start_char=start,
-                    end_char=end,
-                    text=chunk_text,
-                    embedding=embedding_fn(chunk_text)
-                ))
-            self.artifacts.update_index_status(artifact.id, IndexStatus.INDEXED)
-        except Exception as e:
-            self.artifacts.update_index_status(artifact.id, IndexStatus.FAILED, str(e))
-            raise
-
-        return self.artifacts.get(artifact.id)
-
-    def search(self, query_embedding: list[float], brain_id: Optional[str] = None, limit: int = 10) -> list[dict]:
-        """Search for relevant chunks. Returns list of {chunk, similarity, artifact}."""
-        results = self.chunks.search(query_embedding, limit=limit, brain_id=brain_id)
+    def search(self, query_embedding: list[float], resource_ids: Optional[list[str]] = None, limit: int = 10) -> list[dict]:
+        """Search for relevant chunks. Returns list of {chunk, similarity, resource}."""
+        results = self.chunks.search(query_embedding, limit=limit, resource_ids=resource_ids)
         return [
-            {'chunk': chunk, 'similarity': sim, 'artifact': self.artifacts.get(chunk.artifact_id)}
+            {'chunk': chunk, 'similarity': sim, 'resource': self.resources.get(chunk.resource_id)}
             for chunk, sim in results
         ]
 
-    def get_context(self, query_embedding: list[float], brain_id: str, max_chars: int = 16000) -> str:
+    def get_context(self, query_embedding: list[float], resource_ids: list[str], max_chars: int = 16000) -> str:
         """Get formatted context string for LLM prompt."""
-        results = self.search(query_embedding, brain_id=brain_id, limit=20)
+        results = self.search(query_embedding, resource_ids=resource_ids, limit=20)
         parts, total = [], 0
         for r in results:
-            text = f"[{r['artifact'].name}]\n{r['chunk'].text}\n"
+            text = f"[{r['resource'].name}]\n{r['chunk'].text}\n"
             if total + len(text) > max_chars:
                 break
             parts.append(text)
             total += len(text)
-        return "\n---\n".join(parts)
+        return '\n---\n'.join(parts)
 
-    def delete_artifact(self, artifact_id: str) -> None:
-        """Delete artifact and its chunks."""
-        self.chunks.delete_by_artifact(artifact_id)
-        self.artifacts.delete(artifact_id)
+    def delete_resource(self, resource_id: str) -> None:
+        """Delete resource and its chunks."""
+        self.chunks.delete_by_resource(resource_id)
+        self.resources.delete(resource_id)
 
     def _chunk_text(self, text: str, size: int, overlap: int) -> list[tuple[str, int, int]]:
         """Split text into overlapping chunks."""
