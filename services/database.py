@@ -129,7 +129,11 @@ class BrainRepository:
         return brain
 
     def delete(self, brain_id: str) -> bool:
-        self.conn.execute("DELETE FROM brains WHERE id = ?", [brain_id])
+        # Clear references in tables without ON DELETE CASCADE
+        self.conn.execute('UPDATE sessions SET current_brain_id = NULL WHERE current_brain_id = ?', [brain_id])
+        self.conn.execute('UPDATE user_settings SET default_brain_id = NULL WHERE default_brain_id = ?', [brain_id])
+        self.conn.execute('DELETE FROM interactions WHERE brain_id = ?', [brain_id])
+        self.conn.execute('DELETE FROM brains WHERE id = ?', [brain_id])
         self.conn.commit()
         return True
 

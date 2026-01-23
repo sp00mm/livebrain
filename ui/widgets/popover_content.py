@@ -92,11 +92,11 @@ QLabel#liveLabel {
     font-size: 13px;
 }
 QLabel#transcriptUser {
-    color: #ffffff;
+    color: #5fb85f;
     font-size: 13px;
 }
 QLabel#transcriptOther {
-    color: #5fb85f;
+    color: #ffffff;
     font-size: 13px;
 }
 QComboBox {
@@ -658,7 +658,7 @@ class PopoverContent(QWidget):
             entries = entries + [self._partial_entry]
 
         for entry in entries:
-            arrow = '→' if entry.speaker == SpeakerType.USER else '←'
+            arrow = '←' if entry.speaker == SpeakerType.USER else '→'
             label = QLabel(f'{arrow} {entry.text}')
             label.setWordWrap(True)
             if entry.speaker == SpeakerType.USER:

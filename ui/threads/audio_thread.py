@@ -1,3 +1,6 @@
+import struct
+import time
+
 from PySide6.QtCore import QThread, Signal
 
 from audio.storage import AudioStorage
@@ -11,10 +14,14 @@ class AudioThread(QThread):
     status_changed = Signal(str)
     error = Signal(str)
 
+    SYSTEM_ENERGY_THRESHOLD = 0.01
+    SYSTEM_ACTIVE_DECAY = 0.3
+
     def __init__(self, session_id: str):
         super().__init__()
         self.session_id = session_id
         self._stop_requested = False
+        self._system_last_active = 0.0
 
         self._storage = AudioStorage(session_id)
         self._mic_capture = MacOSMicCapture()
@@ -64,12 +71,18 @@ class AudioThread(QThread):
     def _on_mic_audio(self, audio_data: bytes, _timestamp: float):
         int16_data = AudioStorage.convert_float32_to_int16(audio_data)
         self._storage.write_mic(int16_data)
-        self._mic_transcriber.feed_audio(audio_data)
+        if time.time() - self._system_last_active > self.SYSTEM_ACTIVE_DECAY:
+            self._mic_transcriber.feed_audio(audio_data)
 
     def _on_system_audio(self, audio_data: bytes, _timestamp: float):
         int16_data = AudioStorage.convert_float32_to_int16(audio_data)
         self._storage.write_system(int16_data)
         self._system_transcriber.feed_audio(audio_data)
+
+        floats = struct.unpack(f'{len(audio_data) // 4}f', audio_data)
+        rms = (sum(f * f for f in floats) / len(floats)) ** 0.5
+        if rms > self.SYSTEM_ENERGY_THRESHOLD:
+            self._system_last_active = time.time()
 
     def _on_transcript(self, speaker: SpeakerType, text: str, confidence: float, is_final: bool):
         self.transcript_update.emit(speaker.value, text, confidence, is_final)

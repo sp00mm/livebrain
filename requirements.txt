@@ -9,5 +9,5 @@ pyobjc-framework-AVFoundation
 pyobjc-framework-ScreenCaptureKit
 pyobjc-framework-Speech
 pyobjc-framework-Cocoa
-pynput
+pynput==1.7.6
 openai>=1.68.0
