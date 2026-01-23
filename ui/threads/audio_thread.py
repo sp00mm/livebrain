@@ -1,5 +1,5 @@
 import struct
-import time
+from collections import deque
 
 from PySide6.QtCore import QThread, Signal
 
@@ -14,14 +14,18 @@ class AudioThread(QThread):
     status_changed = Signal(str)
     error = Signal(str)
 
-    SYSTEM_ENERGY_THRESHOLD = 0.01
-    SYSTEM_ACTIVE_DECAY = 0.3
+    SAMPLE_RATE_KHZ = 48
+    CHUNK_MS = 10
+    DECAY_CHUNKS = 3
+    HISTORY_SIZE = 10
+    MIC_RATIO_THRESHOLD = 3.0
 
     def __init__(self, session_id: str):
         super().__init__()
         self.session_id = session_id
         self._stop_requested = False
-        self._system_last_active = 0.0
+        self._system_energy = deque(maxlen=self.HISTORY_SIZE)
+        self._chunks_since_active = self.DECAY_CHUNKS + 1
 
         self._storage = AudioStorage(session_id)
         self._mic_capture = MacOSMicCapture()
@@ -71,7 +75,15 @@ class AudioThread(QThread):
     def _on_mic_audio(self, audio_data: bytes, _timestamp: float):
         int16_data = AudioStorage.convert_float32_to_int16(audio_data)
         self._storage.write_mic(int16_data)
-        if time.time() - self._system_last_active > self.SYSTEM_ACTIVE_DECAY:
+
+        floats = struct.unpack(f'{len(audio_data) // 4}f', audio_data)
+        mic_rms = (sum(f * f for f in floats) / len(floats)) ** 0.5
+
+        system_avg = sum(self._system_energy) / len(self._system_energy) if self._system_energy else 0
+
+        if self._chunks_since_active > self.DECAY_CHUNKS:
+            self._mic_transcriber.feed_audio(audio_data)
+        elif system_avg > 0 and mic_rms / system_avg > self.MIC_RATIO_THRESHOLD:
             self._mic_transcriber.feed_audio(audio_data)
 
     def _on_system_audio(self, audio_data: bytes, _timestamp: float):
@@ -80,9 +92,20 @@ class AudioThread(QThread):
         self._system_transcriber.feed_audio(audio_data)
 
         floats = struct.unpack(f'{len(audio_data) // 4}f', audio_data)
-        rms = (sum(f * f for f in floats) / len(floats)) ** 0.5
-        if rms > self.SYSTEM_ENERGY_THRESHOLD:
-            self._system_last_active = time.time()
+        samples_per_chunk = self.CHUNK_MS * self.SAMPLE_RATE_KHZ
+
+        for i in range(0, len(floats), samples_per_chunk):
+            chunk = floats[i:i + samples_per_chunk]
+            rms = (sum(f * f for f in chunk) / len(chunk)) ** 0.5
+            self._system_energy.append(rms)
+
+            avg = sum(self._system_energy) / len(self._system_energy)
+            threshold = max(0.01, avg * 1.5)
+
+            if rms > threshold:
+                self._chunks_since_active = 0
+            else:
+                self._chunks_since_active += 1
 
     def _on_transcript(self, speaker: SpeakerType, text: str, confidence: float, is_final: bool):
         self.transcript_update.emit(speaker.value, text, confidence, is_final)

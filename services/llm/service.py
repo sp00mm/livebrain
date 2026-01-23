@@ -46,5 +46,5 @@ class LLMService:
         return ModelConfig(model=settings.preferred_model)
 
     def _get_api_key(self) -> str:
-        settings = self._settings_repo.get()
-        return settings.api_key_encrypted or ''
+        from services.secrets import secrets
+        return secrets.get('openai_api_key') or ''

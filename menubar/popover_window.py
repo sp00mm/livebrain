@@ -1,8 +1,30 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QApplication
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt, QEvent, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QBrush
 
 from AppKit import NSScreen
+
+
+class DetachedWindow(QWidget):
+    closed = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('LiveBrain')
+        self.setMinimumSize(400, 520)
+        self.setStyleSheet('background-color: #1e1e1e;')
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(8, 8, 8, 8)
+
+    def set_content(self, widget: QWidget):
+        self._layout.addWidget(widget)
+
+    def take_content(self) -> QWidget:
+        return self._layout.takeAt(0).widget()
+
+    def closeEvent(self, event):
+        self.closed.emit()
+        event.ignore()
 
 
 class PopoverWindow(QWidget):
@@ -16,13 +38,19 @@ class PopoverWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.addWidget(content_widget)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(8, 8, 8, 8)
+        self._layout.addWidget(content_widget)
 
         self.setFixedSize(400, 520)
 
         QApplication.instance().installEventFilter(self)
+
+    def set_content(self, widget: QWidget):
+        self._layout.addWidget(widget)
+
+    def take_content(self) -> QWidget:
+        return self._layout.takeAt(0).widget()
 
     def paintEvent(self, event):
         painter = QPainter(self)

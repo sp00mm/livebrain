@@ -858,34 +858,25 @@ class UserSettingsRepository:
             default_input_device=row[1],
             default_output_device=row[2],
             default_brain_id=row[3],
-            show_transcript=bool(row[4]),
-            transcript_max_lines=row[5] or 10,
-            api_key_encrypted=row[6],
-            preferred_model=row[7] or "gpt-4o",
-            data_directory=row[8],
-            max_session_storage_days=row[9] or 30
+            preferred_model=row[4] or 'gpt-4o',
+            data_directory=row[5],
+            max_session_storage_days=row[6] or 30
         )
 
     def update(self, settings: UserSettings) -> UserSettings:
-        self.conn.execute("""
+        self.conn.execute('''
             UPDATE user_settings SET
                 default_input_device = ?,
                 default_output_device = ?,
                 default_brain_id = ?,
-                show_transcript = ?,
-                transcript_max_lines = ?,
-                api_key_encrypted = ?,
                 preferred_model = ?,
                 data_directory = ?,
                 max_session_storage_days = ?
             WHERE id = 1
-        """, [
+        ''', [
             settings.default_input_device,
             settings.default_output_device,
             settings.default_brain_id,
-            1 if settings.show_transcript else 0,
-            settings.transcript_max_lines,
-            settings.api_key_encrypted,
             settings.preferred_model,
             settings.data_directory,
             settings.max_session_storage_days

@@ -604,22 +604,18 @@ class TestUserSettingsRepository:
 
         settings = repo.get()
 
-        assert settings.show_transcript is True
-        assert settings.transcript_max_lines == 10
-        assert settings.preferred_model == "gpt-4o"
+        assert settings.preferred_model == 'gpt-4o'
 
     def test_update_settings(self, db):
         repo = UserSettingsRepository(db)
 
         settings = repo.get()
-        settings.show_transcript = False
-        settings.preferred_model = "claude-3-sonnet"
+        settings.preferred_model = 'claude-3-sonnet'
         settings.max_session_storage_days = 60
         repo.update(settings)
 
         fetched = repo.get()
-        assert fetched.show_transcript is False
-        assert fetched.preferred_model == "claude-3-sonnet"
+        assert fetched.preferred_model == 'claude-3-sonnet'
         assert fetched.max_session_storage_days == 60
 
 

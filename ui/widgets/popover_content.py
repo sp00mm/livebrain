@@ -125,6 +125,12 @@ QComboBox QAbstractItemView {
     color: #e0e0e0;
     padding: 4px;
 }
+QComboBox#settingsCombo {
+    background-color: #1e1e1e;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    padding: 8px 12px;
+}
 QScrollArea {
     border: none;
     background: transparent;
@@ -177,6 +183,8 @@ class QuestionRow(QFrame):
 
 
 class PopoverContent(QWidget):
+    pop_out_requested = Signal()
+
     def __init__(self, app: 'MenuBarApp'):
         super().__init__()
         self.app = app
@@ -212,6 +220,7 @@ class PopoverContent(QWidget):
         self._stack.addWidget(self._build_brain_edit_view())
         self._stack.addWidget(self._build_question_edit_view())
         self._stack.addWidget(self._build_resources_view())
+        self._stack.addWidget(self._build_settings_view())
 
     def _build_main_view(self) -> QWidget:
         view = QWidget()
@@ -239,6 +248,15 @@ class PopoverContent(QWidget):
         live_container.addWidget(self._live_label)
         header.addLayout(live_container)
 
+        self._pop_out_btn = QPushButton()
+        self._pop_out_btn.setObjectName('iconBtn')
+        self._pop_out_btn.setIcon(qta.icon('mdi.open-in-new', color='#888888'))
+        self._pop_out_btn.setFixedSize(24, 24)
+        self._pop_out_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pop_out_btn.setToolTip('Open in window')
+        self._pop_out_btn.clicked.connect(self.pop_out_requested.emit)
+        header.addWidget(self._pop_out_btn)
+
         header.addStretch()
 
         brain_label = QLabel('Brain:')
@@ -264,6 +282,14 @@ class PopoverContent(QWidget):
         self._edit_brain_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._edit_brain_btn.clicked.connect(self._show_brain_edit)
         header.addWidget(self._edit_brain_btn)
+
+        self._settings_btn = QPushButton()
+        self._settings_btn.setObjectName('iconBtn')
+        self._settings_btn.setIcon(qta.icon('mdi.cog', color='#888888'))
+        self._settings_btn.setFixedSize(24, 24)
+        self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._settings_btn.clicked.connect(self._show_settings)
+        header.addWidget(self._settings_btn)
 
         layout.addLayout(header)
 
@@ -797,6 +823,91 @@ class PopoverContent(QWidget):
         layout.addStretch()
         return view
 
+    def _build_settings_view(self) -> QWidget:
+        view = QWidget()
+        layout = QVBoxLayout(view)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 12, 16, 12)
+
+        header = QHBoxLayout()
+        back_btn = QPushButton()
+        back_btn.setObjectName('iconBtn')
+        back_btn.setIcon(qta.icon('mdi.arrow-left', color='#6eb5ff'))
+        back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+        header.addWidget(back_btn)
+        header.addStretch()
+        title = QLabel('Settings')
+        title.setStyleSheet('font-weight: 600; font-size: 14px; color: #e0e0e0;')
+        header.addWidget(title)
+        header.addStretch()
+        header.addSpacing(28)
+        layout.addLayout(header)
+
+        layout.addWidget(self._section_label('AI CONNECTION'))
+        layout.addWidget(QLabel('AI Key'))
+        self._api_key_input = QLineEdit()
+        self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_key_input.setPlaceholderText('Enter your OpenAI API key')
+        layout.addWidget(self._api_key_input)
+
+        self._api_key_status = QLabel()
+        self._api_key_status.setStyleSheet('font-size: 11px;')
+        layout.addWidget(self._api_key_status)
+
+        layout.addWidget(self._section_label('MODEL'))
+        layout.addWidget(QLabel('AI Model'))
+        self._model_combo = QComboBox()
+        self._model_combo.setObjectName('settingsCombo')
+        self._model_combo.addItem('GPT-5', 'gpt-5-chat-latest')
+        self._model_combo.addItem('GPT-4.1', 'gpt-4.1')
+        self._model_combo.addItem('GPT-4.1 Mini', 'gpt-4.1-mini')
+        self._model_combo.addItem('GPT-4o', 'gpt-4o')
+        layout.addWidget(self._model_combo)
+
+        layout.addStretch()
+
+        save_btn = QPushButton('Save')
+        save_btn.setStyleSheet('background-color: #2d4a2d; border-color: #3a5a3a;')
+        save_btn.clicked.connect(self._save_settings)
+        layout.addWidget(save_btn)
+
+        return view
+
+    def _show_settings(self):
+        settings = self.app.settings_repo.get()
+        from services.secrets import secrets
+        api_key = secrets.get('openai_api_key')
+        self._api_key_input.setText(api_key or '')
+        self._update_api_key_status(api_key)
+
+        for i in range(self._model_combo.count()):
+            if self._model_combo.itemData(i) == settings.preferred_model:
+                self._model_combo.setCurrentIndex(i)
+                break
+
+        self._stack.setCurrentIndex(4)
+
+    def _save_settings(self):
+        from services.secrets import secrets
+        api_key = self._api_key_input.text().strip()
+        if api_key:
+            secrets.set('openai_api_key', api_key)
+        else:
+            secrets.delete('openai_api_key')
+
+        settings = self.app.settings_repo.get()
+        settings.preferred_model = self._model_combo.currentData()
+        self.app.settings_repo.update(settings)
+        self._stack.setCurrentIndex(0)
+
+    def _update_api_key_status(self, key: Optional[str]):
+        if key:
+            self._api_key_status.setText('Set')
+            self._api_key_status.setStyleSheet('color: #4CAF50; font-size: 11px;')
+        else:
+            self._api_key_status.setText('Not set')
+            self._api_key_status.setStyleSheet('color: #ff6b6b; font-size: 11px;')
+
     def _show_resources_view(self):
         self._load_resources()
         self._stack.setCurrentIndex(3)
@@ -1001,3 +1112,11 @@ class PopoverContent(QWidget):
         self.app.rag.delete_resource(resource.id)
         self._load_resources()
         self._load_resource_links()
+
+    def set_detached(self, detached: bool):
+        if detached:
+            self._pop_out_btn.setIcon(qta.icon('mdi.arrow-collapse', color='#888888'))
+            self._pop_out_btn.setToolTip('Back to menu bar')
+        else:
+            self._pop_out_btn.setIcon(qta.icon('mdi.open-in-new', color='#888888'))
+            self._pop_out_btn.setToolTip('Open in window')

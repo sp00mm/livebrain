@@ -314,9 +314,6 @@ class UserSettings:
     default_input_device: Optional[str] = None
     default_output_device: Optional[str] = None
     default_brain_id: Optional[str] = None
-    show_transcript: bool = True
-    transcript_max_lines: int = 10
-    api_key_encrypted: Optional[str] = None
     preferred_model: str = 'gpt-5-chat-latest'
     data_directory: Optional[str] = None
     max_session_storage_days: int = 30

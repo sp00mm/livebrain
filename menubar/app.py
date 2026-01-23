@@ -15,7 +15,7 @@ from models import Brain
 
 from .status_bar import StatusBarController
 from .hotkeys import GlobalHotkeyManager
-from .popover_window import PopoverWindow
+from .popover_window import PopoverWindow, DetachedWindow
 
 
 class RecordingSignals(QObject):
@@ -61,7 +61,12 @@ class MenuBarApp:
 
         from ui.widgets.popover_content import PopoverContent
         self._content = PopoverContent(self)
+        self._content.pop_out_requested.connect(self._toggle_detached)
+
         self._popover = PopoverWindow(self._content)
+        self._detached = DetachedWindow()
+        self._detached.closed.connect(self._attach_to_popover)
+        self._is_detached = False
 
         self._status_bar = StatusBarController(
             on_click=self._on_status_click,
@@ -78,8 +83,34 @@ class MenuBarApp:
         self._animation_state = False
 
     def _on_status_click(self):
-        frame = self._status_bar.get_button_frame()
-        self._popover.toggle(frame)
+        if self._is_detached:
+            self._detached.raise_()
+            self._detached.activateWindow()
+        else:
+            frame = self._status_bar.get_button_frame()
+            self._popover.toggle(frame)
+
+    def _toggle_detached(self):
+        if self._is_detached:
+            self._attach_to_popover()
+        else:
+            self._detach_to_window()
+
+    def _detach_to_window(self):
+        self._popover.hide()
+        content = self._popover.take_content()
+        self._detached.set_content(content)
+        self._content.set_detached(True)
+        self._is_detached = True
+        self._detached.show()
+        self._detached.raise_()
+
+    def _attach_to_popover(self):
+        self._detached.hide()
+        content = self._detached.take_content()
+        self._popover.set_content(content)
+        self._content.set_detached(False)
+        self._is_detached = False
 
     def _on_hotkey_toggle(self):
         self._signals.toggle_requested.emit()
@@ -111,6 +142,10 @@ class MenuBarApp:
         NSApp.terminate_(None)
 
     def show_popover(self):
-        frame = self._status_bar.get_button_frame()
-        self._popover.position_below_status_item(frame)
-        self._popover.show()
+        if self._is_detached:
+            self._detached.raise_()
+            self._detached.activateWindow()
+        else:
+            frame = self._status_bar.get_button_frame()
+            self._popover.position_below_status_item(frame)
+            self._popover.show()
