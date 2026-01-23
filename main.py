@@ -1,8 +1,10 @@
+import os
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
 import sys
 import json
-import os
 from PySide6.QtWidgets import QApplication
-from ui import MainWindow
+from menubar import MenuBarApp
 
 
 def get_version():
@@ -13,14 +15,14 @@ def get_version():
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("LiveBrain")
+    app.setApplicationName('LiveBrain')
     app.setApplicationVersion(get_version())
-    
-    window = MainWindow()
-    window.show()
+    app.setQuitOnLastWindowClosed(False)
+
+    menubar_app = MenuBarApp()
+
     sys.exit(app.exec())
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
-

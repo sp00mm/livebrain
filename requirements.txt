@@ -1,4 +1,5 @@
 PySide6
+qtawesome
 onnxruntime
 tokenizers
 numpy
@@ -7,4 +8,6 @@ PyPDF2
 pyobjc-framework-AVFoundation
 pyobjc-framework-ScreenCaptureKit
 pyobjc-framework-Speech
+pyobjc-framework-Cocoa
+pynput
 openai>=1.68.0

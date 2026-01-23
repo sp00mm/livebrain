@@ -1,8 +1,4 @@
-__all__ = ['MainWindow']
+from .threads import ModelDownloadThread, IndexThread, QueryExecutionThread
+from .widgets import PopoverContent
 
-def __getattr__(name):
-    if name == 'MainWindow':
-        from .windows.main_window import MainWindow
-        return MainWindow
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
+__all__ = ['ModelDownloadThread', 'IndexThread', 'QueryExecutionThread', 'PopoverContent']

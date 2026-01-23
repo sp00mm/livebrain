@@ -27,6 +27,7 @@ $PYTHON -m nuitka --standalone \
   --nofollow-import-to=models \
   --static-libpython=no \
   --include-data-files=version.json=version.json \
+  --include-data-dir=resources=resources \
   main.py
 
 # Rename app bundle
@@ -45,6 +46,11 @@ fi
 # Remove models from the built app if they were included
 echo "Removing models from bundle..."
 rm -rf LiveBrain.app/Contents/MacOS/models 2>/dev/null || true
+
+# Set LSUIElement to hide dock icon (menu bar app only)
+echo "Setting LSUIElement for menu bar app..."
+/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" LiveBrain.app/Contents/Info.plist 2>/dev/null || \
+/usr/libexec/PlistBuddy -c "Set :LSUIElement true" LiveBrain.app/Contents/Info.plist
 
 echo "Creating DMG (without models)..."
 create-dmg \
