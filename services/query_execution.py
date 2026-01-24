@@ -1,16 +1,21 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 import time
 
 from models import (
-    Brain, Interaction, AIResponse, ExecutionStep, FileReference,
-    QueryType, StepType, StepStatus, ModelConfig, BrainCapabilities, ResourceType
+    Brain, BrainTool, Interaction, AIResponse, ExecutionStep, FileReference,
+    TranscriptEntry, QueryType, StepType, StepStatus, ModelConfig, ResourceType, ToolType
 )
 from services.database import (
-    Database, QuestionRepository, TranscriptEntryRepository,
-    InteractionRepository, AIResponseRepository, ExecutionStepRepository, RAGService, ResourceRepository
+    Database, BrainToolRepository, QuestionRepository,
+    InteractionRepository, AIResponseRepository, ExecutionStepRepository,
+    RAGService, ResourceRepository
 )
 from services.llm import LLMService, Message
+from services.conversation import ConversationContextCache
+
+
+_context_cache = ConversationContextCache()
 
 
 @dataclass
@@ -18,6 +23,7 @@ class QueryContext:
     session_id: str
     brain: Brain
     query_text: str
+    transcript: list[TranscriptEntry] = field(default_factory=list)
     query_type: QueryType = QueryType.FREEFORM
     question_id: Optional[str] = None
 
@@ -33,8 +39,8 @@ class QueryExecutionService:
     def __init__(self, db: Database, embedder):
         self.db = db
         self.embedder = embedder
+        self._tool_repo = BrainToolRepository(db)
         self._question_repo = QuestionRepository(db)
-        self._transcript_repo = TranscriptEntryRepository(db)
         self._interaction_repo = InteractionRepository(db)
         self._response_repo = AIResponseRepository(db)
         self._step_repo = ExecutionStepRepository(db)
@@ -45,54 +51,55 @@ class QueryExecutionService:
     def execute(self, ctx: QueryContext, callbacks: ExecutionCallbacks) -> AIResponse:
         start_time = time.time()
 
-        config, capabilities = self._resolve_config(ctx)
+        config = self._resolve_config(ctx)
+        tools = self._tool_repo.get_enabled_by_brain(ctx.brain.id)
         interaction = self._create_interaction(ctx)
 
-        transcript_text = ''
+        conversation = _context_cache.get(ctx.session_id, ctx.brain.id)
+
+        transcript_ids = []
         rag_context = ''
         file_refs = []
-        transcript_ids = []
         resource_ids = []
 
-        if capabilities.conversation:
-            step = self._emit_step(interaction.id, StepType.LISTENING, callbacks.on_step)
-            transcript_text, transcript_ids = self._gather_transcript(ctx.session_id)
-            self._complete_step(step.id, callbacks.on_step)
+        step = self._emit_step(interaction.id, StepType.LISTENING, callbacks.on_step)
+        conversation.add_transcript_entries(ctx.transcript)
+        transcript_ids = conversation.get_transcript_ids()
+        self._complete_step(step.id, callbacks.on_step)
 
-        if capabilities.files:
+        has_search_tool = any(t.tool_type == ToolType.SEARCH_FILES for t in tools)
+        if has_search_tool:
             linked_resources = self._resource_repo.get_by_brain(ctx.brain.id)
-            linked_ids = [r.id for r in linked_resources]
-            if linked_ids:
+            folder_ids = [r.id for r in linked_resources if r.resource_type == ResourceType.FOLDER]
+            if folder_ids:
                 step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
-                rag_context, file_refs, resource_ids = self._gather_rag_context(linked_ids, ctx.query_text)
+                rag_context, file_refs, resource_ids = self._gather_rag_context(folder_ids, ctx.query_text)
                 self._complete_step(step.id, callbacks.on_step)
 
-        tools = self._build_tools(capabilities)
-
-        # Update interaction with context snapshots
         interaction.transcript_snapshot = transcript_ids
         interaction.resources_used = resource_ids
         self._interaction_repo.update(interaction)
 
-        messages = self._build_messages(ctx.query_text, transcript_text, rag_context)
-        system_prompt = self._build_system_prompt(ctx.brain)
+        system_prompt = self._build_system_prompt(ctx.brain, tools)
+        messages = self._build_messages(conversation, ctx.query_text, rag_context)
+        tool_defs = self._build_tools(tools)
 
         step = self._emit_step(interaction.id, StepType.GENERATING, callbacks.on_step)
-        full_text = ''
 
         gen = self._llm.stream(
             messages, config, system_prompt,
             lambda delta, is_final: callbacks.on_delta(delta) if not is_final else None,
-            tools=tools
+            tools=tool_defs
         )
         while True:
             try:
                 delta = next(gen)
-                full_text += delta
             except StopIteration as e:
                 llm_response = e.value
                 break
         self._complete_step(step.id, callbacks.on_step)
+
+        conversation.add_qa(ctx.query_text, llm_response.text)
 
         latency_ms = int((time.time() - start_time) * 1000)
         response = AIResponse(
@@ -108,18 +115,13 @@ class QueryExecutionService:
         callbacks.on_complete(response)
         return response
 
-    def _resolve_config(self, ctx: QueryContext) -> tuple[ModelConfig, BrainCapabilities]:
+    def _resolve_config(self, ctx: QueryContext) -> ModelConfig:
         config = ctx.brain.default_model_config
-        capabilities = ctx.brain.capabilities
-
         if ctx.question_id:
             question = self._question_repo.get(ctx.question_id)
             if question and question.model_config_override:
                 config = question.model_config_override
-            if question and question.capabilities_override:
-                capabilities = question.capabilities_override
-
-        return config, capabilities
+        return config
 
     def _create_interaction(self, ctx: QueryContext) -> Interaction:
         interaction = Interaction(
@@ -140,26 +142,14 @@ class QueryExecutionService:
 
     def _complete_step(self, step_id: str, on_step: Callable[[ExecutionStep], None]):
         self._step_repo.complete(step_id)
-        # Emit a minimal step object to signal completion
         on_step(ExecutionStep(id=step_id, status=StepStatus.COMPLETED))
 
-    def _gather_transcript(self, session_id: str, max_lines: int = 20) -> tuple[str, list[str]]:
-        entries = self._transcript_repo.get_recent(session_id, max_lines)
-        lines = [f'{e.speaker.value}: {e.text}' for e in entries]
-        ids = [e.id for e in entries]
-        return '\n'.join(lines), ids
-
     def _gather_rag_context(self, resource_ids: list[str], query: str) -> tuple[str, list[FileReference], list[str]]:
-        folder_ids = [
-            rid for rid in resource_ids
-            if (r := self._resource_repo.get(rid)) and r.resource_type == ResourceType.FOLDER
-        ]
-
-        if not folder_ids:
+        if not resource_ids:
             return '', [], []
 
         embedding = self.embedder.embed(query, is_query=True)
-        results = self._rag.search(embedding, resource_ids=folder_ids, limit=10)
+        results = self._rag.search(embedding, resource_ids=resource_ids, limit=10)
 
         context_parts = []
         file_refs = []
@@ -185,30 +175,41 @@ class QueryExecutionService:
 
         return '\n---\n'.join(context_parts), file_refs, used_resource_ids
 
-    def _build_messages(self, query: str, transcript: str, rag_context: str) -> list[Message]:
+    def _build_messages(self, conversation, query: str, rag_context: str) -> list[Message]:
+        messages = conversation.build_messages()
+
         content_parts = []
-
-        if transcript:
-            content_parts.append(f'Conversation transcript:\n{transcript}')
-
         if rag_context:
             content_parts.append(f'Relevant documents:\n{rag_context}')
+        content_parts.append(query)
 
-        content_parts.append(f'Question: {query}')
+        messages.append(Message(role='user', content='\n\n'.join(content_parts)))
+        return messages
 
-        return [Message(role='user', content='\n\n'.join(content_parts))]
-
-    def _build_system_prompt(self, brain: Brain) -> str:
-        prompt = f'You are {brain.name}, an AI assistant.'
+    def _build_system_prompt(self, brain: Brain, tools: list[BrainTool]) -> str:
+        prompt = f'You are {brain.name}'
         if brain.description:
-            prompt += f'\n{brain.description}'
-        prompt += '\n\nAnswer questions based on the provided context. Reference files when relevant.'
+            prompt += f', {brain.description}'
+        prompt += '.'
+
+        if tools:
+            prompt += '\n\nYou have these tools:\n'
+            for tool in tools:
+                prompt += f'- {tool.name}: {tool.description}\n'
+            prompt += '\nUse tools when helpful. Cite sources when referencing files.'
+
+        prompt += '\n\nAnswer based on the conversation and context. Be concise.'
         return prompt
 
-    def _build_tools(self, capabilities: BrainCapabilities) -> list[dict] | None:
-        tools = []
-        if capabilities.web:
-            tools.append({'type': 'web_search'})
-        if capabilities.code:
-            tools.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
-        return tools or None
+    def _build_tools(self, tools: list[BrainTool]) -> Optional[list[dict]]:
+        if not tools:
+            return None
+
+        defs = []
+        for tool in tools:
+            if tool.tool_type == ToolType.WEB_SEARCH:
+                defs.append({'type': 'web_search'})
+            elif tool.tool_type == ToolType.CODE_INTERPRETER:
+                defs.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
+
+        return defs if defs else None

@@ -14,9 +14,9 @@ from typing import Optional
 import libsql
 
 from models import (
-    Brain, Question, Resource, DocumentChunk, Session,
+    Brain, BrainTool, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    MCPServer, UserSettings, ModelConfig, BrainCapabilities,
+    MCPServer, UserSettings, ModelConfig, ToolType,
     FileReference, SpeakerType, QueryType, ResourceType,
     IndexStatus, StepType, StepStatus, MCPStatus
 )
@@ -77,23 +77,19 @@ def _str_to_dt(s: Optional[str]) -> Optional[datetime]:
 # =============================================================================
 
 class BrainRepository:
-    """CRUD operations for Brain entities."""
-
     def __init__(self, db: Database):
         self.db = db
         self.conn = db.conn
 
     def create(self, brain: Brain) -> Brain:
-        self.conn.execute("""
-            INSERT INTO brains (id, name, description, default_model_config_json,
-                              capabilities_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, [
+        self.conn.execute('''
+            INSERT INTO brains (id, name, description, default_model_config_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', [
             brain.id,
             brain.name,
             brain.description,
             json.dumps(brain.default_model_config.to_dict()),
-            json.dumps(brain.capabilities.to_dict()),
             _dt_to_str(brain.created_at),
             _dt_to_str(brain.updated_at)
         ])
@@ -101,27 +97,23 @@ class BrainRepository:
         return brain
 
     def get(self, brain_id: str) -> Optional[Brain]:
-        cursor = self.conn.execute(
-            "SELECT * FROM brains WHERE id = ?", [brain_id]
-        )
+        cursor = self.conn.execute('SELECT * FROM brains WHERE id = ?', [brain_id])
         row = cursor.fetchone()
         return self._row_to_brain(row) if row else None
 
     def get_all(self) -> list[Brain]:
-        cursor = self.conn.execute("SELECT * FROM brains ORDER BY created_at DESC")
+        cursor = self.conn.execute('SELECT * FROM brains ORDER BY created_at DESC')
         return [self._row_to_brain(row) for row in cursor.fetchall()]
 
     def update(self, brain: Brain) -> Brain:
         brain.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        self.conn.execute("""
-            UPDATE brains SET name = ?, description = ?, default_model_config_json = ?,
-                            capabilities_json = ?, updated_at = ?
+        self.conn.execute('''
+            UPDATE brains SET name = ?, description = ?, default_model_config_json = ?, updated_at = ?
             WHERE id = ?
-        """, [
+        ''', [
             brain.name,
             brain.description,
             json.dumps(brain.default_model_config.to_dict()),
-            json.dumps(brain.capabilities.to_dict()),
             _dt_to_str(brain.updated_at),
             brain.id
         ])
@@ -129,7 +121,6 @@ class BrainRepository:
         return brain
 
     def delete(self, brain_id: str) -> bool:
-        # Clear references in tables without ON DELETE CASCADE
         self.conn.execute('UPDATE sessions SET current_brain_id = NULL WHERE current_brain_id = ?', [brain_id])
         self.conn.execute('UPDATE user_settings SET default_brain_id = NULL WHERE default_brain_id = ?', [brain_id])
         self.conn.execute('DELETE FROM interactions WHERE brain_id = ?', [brain_id])
@@ -141,11 +132,92 @@ class BrainRepository:
         return Brain(
             id=row[0],
             name=row[1],
-            description=row[2] or "",
+            description=row[2] or '',
             default_model_config=ModelConfig.from_dict(json.loads(row[3])),
-            capabilities=BrainCapabilities.from_dict(json.loads(row[4])),
-            created_at=_str_to_dt(row[5]),
-            updated_at=_str_to_dt(row[6])
+            created_at=_str_to_dt(row[4]),
+            updated_at=_str_to_dt(row[5])
+        )
+
+
+# =============================================================================
+# Repository: BrainTools
+# =============================================================================
+
+class BrainToolRepository:
+    def __init__(self, db: Database):
+        self.db = db
+        self.conn = db.conn
+
+    def create(self, tool: BrainTool) -> BrainTool:
+        self.conn.execute('''
+            INSERT INTO brain_tools (id, brain_id, tool_type, name, description,
+                                    config_json, enabled, position, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [
+            tool.id,
+            tool.brain_id,
+            tool.tool_type.value,
+            tool.name,
+            tool.description,
+            json.dumps(tool.config) if tool.config else None,
+            1 if tool.enabled else 0,
+            tool.position,
+            _dt_to_str(tool.created_at)
+        ])
+        self.conn.commit()
+        return tool
+
+    def get(self, tool_id: str) -> Optional[BrainTool]:
+        cursor = self.conn.execute('SELECT * FROM brain_tools WHERE id = ?', [tool_id])
+        row = cursor.fetchone()
+        return self._row_to_tool(row) if row else None
+
+    def get_by_brain(self, brain_id: str) -> list[BrainTool]:
+        cursor = self.conn.execute(
+            'SELECT * FROM brain_tools WHERE brain_id = ? ORDER BY position',
+            [brain_id]
+        )
+        return [self._row_to_tool(row) for row in cursor.fetchall()]
+
+    def get_enabled_by_brain(self, brain_id: str) -> list[BrainTool]:
+        cursor = self.conn.execute(
+            'SELECT * FROM brain_tools WHERE brain_id = ? AND enabled = 1 ORDER BY position',
+            [brain_id]
+        )
+        return [self._row_to_tool(row) for row in cursor.fetchall()]
+
+    def update(self, tool: BrainTool) -> BrainTool:
+        self.conn.execute('''
+            UPDATE brain_tools SET name = ?, description = ?, config_json = ?,
+                                  enabled = ?, position = ?
+            WHERE id = ?
+        ''', [
+            tool.name,
+            tool.description,
+            json.dumps(tool.config) if tool.config else None,
+            1 if tool.enabled else 0,
+            tool.position,
+            tool.id
+        ])
+        self.conn.commit()
+        return tool
+
+    def delete(self, tool_id: str) -> bool:
+        self.conn.execute('DELETE FROM brain_tools WHERE id = ?', [tool_id])
+        self.conn.commit()
+        return True
+
+    def _row_to_tool(self, row) -> BrainTool:
+        return BrainTool(
+            id=row[0],
+            brain_id=row[1],
+            tool_type=ToolType(row[2]),
+            name=row[3],
+            description=row[4] or '',
+            config=json.loads(row[5]) if row[5] else {},
+            enabled=bool(row[6]),
+            position=row[7],
+            created_at=_str_to_dt(row[8])
         )
 
 
@@ -154,25 +226,21 @@ class BrainRepository:
 # =============================================================================
 
 class QuestionRepository:
-    """CRUD operations for Question entities."""
-
     def __init__(self, db: Database):
         self.db = db
         self.conn = db.conn
 
     def create(self, question: Question) -> Question:
-        self.conn.execute("""
+        self.conn.execute('''
             INSERT INTO questions (id, brain_id, text, position,
-                                 model_config_override_json, capabilities_override_json,
-                                 created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
+                                 model_config_override_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', [
             question.id,
             question.brain_id,
             question.text,
             question.position,
             json.dumps(question.model_config_override.to_dict()) if question.model_config_override else None,
-            json.dumps(question.capabilities_override.to_dict()) if question.capabilities_override else None,
             _dt_to_str(question.created_at),
             _dt_to_str(question.updated_at)
         ])
@@ -180,31 +248,27 @@ class QuestionRepository:
         return question
 
     def get(self, question_id: str) -> Optional[Question]:
-        cursor = self.conn.execute(
-            "SELECT * FROM questions WHERE id = ?", [question_id]
-        )
+        cursor = self.conn.execute('SELECT * FROM questions WHERE id = ?', [question_id])
         row = cursor.fetchone()
         return self._row_to_question(row) if row else None
 
     def get_by_brain(self, brain_id: str) -> list[Question]:
         cursor = self.conn.execute(
-            "SELECT * FROM questions WHERE brain_id = ? ORDER BY position",
+            'SELECT * FROM questions WHERE brain_id = ? ORDER BY position',
             [brain_id]
         )
         return [self._row_to_question(row) for row in cursor.fetchall()]
 
     def update(self, question: Question) -> Question:
         question.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        self.conn.execute("""
+        self.conn.execute('''
             UPDATE questions SET text = ?, position = ?,
-                               model_config_override_json = ?, capabilities_override_json = ?,
-                               updated_at = ?
+                               model_config_override_json = ?, updated_at = ?
             WHERE id = ?
-        """, [
+        ''', [
             question.text,
             question.position,
             json.dumps(question.model_config_override.to_dict()) if question.model_config_override else None,
-            json.dumps(question.capabilities_override.to_dict()) if question.capabilities_override else None,
             _dt_to_str(question.updated_at),
             question.id
         ])
@@ -212,7 +276,7 @@ class QuestionRepository:
         return question
 
     def delete(self, question_id: str) -> bool:
-        self.conn.execute("DELETE FROM questions WHERE id = ?", [question_id])
+        self.conn.execute('DELETE FROM questions WHERE id = ?', [question_id])
         self.conn.commit()
         return True
 
@@ -223,9 +287,8 @@ class QuestionRepository:
             text=row[2],
             position=row[3],
             model_config_override=ModelConfig.from_dict(json.loads(row[4])) if row[4] else None,
-            capabilities_override=BrainCapabilities.from_dict(json.loads(row[5])) if row[5] else None,
-            created_at=_str_to_dt(row[6]),
-            updated_at=_str_to_dt(row[7])
+            created_at=_str_to_dt(row[5]),
+            updated_at=_str_to_dt(row[6])
         )
 
 

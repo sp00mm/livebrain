@@ -1,13 +1,13 @@
-from unittest.mock import Mock, patch
 from models import (
-    Brain, Question, Session, TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    QueryType, StepType, StepStatus, SpeakerType, ModelConfig, BrainCapabilities
+    Brain, BrainTool, Question, Session, TranscriptEntry, Interaction, AIResponse, ExecutionStep,
+    QueryType, StepType, StepStatus, SpeakerType, ModelConfig, ToolType
 )
 from services.database import (
-    BrainRepository, QuestionRepository, SessionRepository,
+    BrainRepository, BrainToolRepository, QuestionRepository, SessionRepository,
     TranscriptEntryRepository, InteractionRepository
 )
 from services.query_execution import QueryExecutionService, QueryContext, ExecutionCallbacks
+from services.conversation import ConversationContext
 
 
 class MockEmbedder:
@@ -63,20 +63,17 @@ class TestQueryExecutionService:
     def test_resolve_config_uses_brain_defaults(self, db):
         brain_repo = BrainRepository(db)
         config = ModelConfig(model='gpt-4o', temperature=0.5)
-        capabilities = BrainCapabilities(files=True, conversation=True)
         brain = brain_repo.create(Brain(
             name='Test',
-            default_model_config=config,
-            capabilities=capabilities
+            default_model_config=config
         ))
 
         service = QueryExecutionService(db, MockEmbedder())
         ctx = QueryContext(session_id='s1', brain=brain, query_text='test')
 
-        resolved_config, resolved_caps = service._resolve_config(ctx)
+        resolved_config = service._resolve_config(ctx)
         assert resolved_config.model == 'gpt-4o'
         assert resolved_config.temperature == 0.5
-        assert resolved_caps.files is True
 
     def test_resolve_config_uses_question_override(self, db):
         brain_repo = BrainRepository(db)
@@ -84,15 +81,13 @@ class TestQueryExecutionService:
 
         brain = brain_repo.create(Brain(
             name='Test',
-            default_model_config=ModelConfig(model='gpt-4o', temperature=0.5),
-            capabilities=BrainCapabilities(files=True, conversation=True)
+            default_model_config=ModelConfig(model='gpt-4o', temperature=0.5)
         ))
 
         question = question_repo.create(Question(
             brain_id=brain.id,
             text='Custom question',
-            model_config_override=ModelConfig(model='gpt-4o-mini', temperature=0.2),
-            capabilities_override=BrainCapabilities(files=False, conversation=True)
+            model_config_override=ModelConfig(model='gpt-4o-mini', temperature=0.2)
         ))
 
         service = QueryExecutionService(db, MockEmbedder())
@@ -104,10 +99,9 @@ class TestQueryExecutionService:
             question_id=question.id
         )
 
-        resolved_config, resolved_caps = service._resolve_config(ctx)
+        resolved_config = service._resolve_config(ctx)
         assert resolved_config.model == 'gpt-4o-mini'
         assert resolved_config.temperature == 0.2
-        assert resolved_caps.files is False
 
     def test_create_interaction(self, db):
         brain_repo = BrainRepository(db)
@@ -130,62 +124,62 @@ class TestQueryExecutionService:
         assert interaction.query_text == 'What is this about?'
         assert interaction.query_type == QueryType.FREEFORM
 
-    def test_gather_transcript(self, db):
-        session_repo = SessionRepository(db)
-        transcript_repo = TranscriptEntryRepository(db)
-
-        session = session_repo.create(Session(name='Session'))
-        transcript_repo.create(TranscriptEntry(
-            session_id=session.id,
-            speaker=SpeakerType.USER,
-            text='Hello there'
-        ))
-        transcript_repo.create(TranscriptEntry(
-            session_id=session.id,
-            speaker=SpeakerType.OTHER,
-            text='Hi, how are you?'
-        ))
-
-        service = QueryExecutionService(db, MockEmbedder())
-        text, ids = service._gather_transcript(session.id)
-
-        assert 'user: Hello there' in text
-        assert 'other: Hi, how are you?' in text
-        assert len(ids) == 2
-
-    def test_build_messages_with_transcript(self, db):
-        service = QueryExecutionService(db, MockEmbedder())
-        messages = service._build_messages(
-            query='What should I ask?',
-            transcript='user: Hello\nother: Hi there',
-            rag_context=''
-        )
-
-        assert len(messages) == 1
-        assert messages[0].role == 'user'
-        assert 'Conversation transcript:' in messages[0].content
-        assert 'user: Hello' in messages[0].content
-        assert 'Question: What should I ask?' in messages[0].content
-
-    def test_build_messages_with_rag(self, db):
-        service = QueryExecutionService(db, MockEmbedder())
-        messages = service._build_messages(
-            query='Find the policy',
-            transcript='',
-            rag_context='[PTO Policy]\nVacation days are...'
-        )
-
-        assert len(messages) == 1
-        assert 'Relevant documents:' in messages[0].content
-        assert 'PTO Policy' in messages[0].content
-
     def test_build_system_prompt(self, db):
-        service = QueryExecutionService(db, MockEmbedder())
-        brain = Brain(name='Interview Helper', description='Helps with interviews')
+        brain_repo = BrainRepository(db)
+        tool_repo = BrainToolRepository(db)
 
-        prompt = service._build_system_prompt(brain)
+        brain = brain_repo.create(Brain(name='Interview Helper', description='Helps with interviews'))
+        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search', description='Search files'))
+
+        service = QueryExecutionService(db, MockEmbedder())
+        tools = tool_repo.get_by_brain(brain.id)
+        prompt = service._build_system_prompt(brain, tools)
+
         assert 'Interview Helper' in prompt
         assert 'Helps with interviews' in prompt
+        assert 'Search' in prompt
+
+
+class TestConversationContext:
+    def test_build_messages_empty(self):
+        ctx = ConversationContext(session_id='s1', brain_id='b1')
+        messages = ctx.build_messages()
+        assert len(messages) == 0
+
+    def test_build_messages_with_transcript(self):
+        ctx = ConversationContext(session_id='s1', brain_id='b1')
+        ctx.transcript_entries = [
+            TranscriptEntry(session_id='s1', speaker=SpeakerType.USER, text='Hello'),
+            TranscriptEntry(session_id='s1', speaker=SpeakerType.OTHER, text='Hi there')
+        ]
+
+        messages = ctx.build_messages()
+        assert len(messages) == 1
+        assert '[Live Transcript]' in messages[0].content
+        assert 'You: Hello' in messages[0].content
+        assert 'Them: Hi there' in messages[0].content
+
+    def test_build_messages_with_qa_history(self):
+        ctx = ConversationContext(session_id='s1', brain_id='b1')
+        ctx.add_qa('What is this?', 'This is a test.')
+
+        messages = ctx.build_messages()
+        assert len(messages) == 2
+        assert messages[0].role == 'user'
+        assert messages[0].content == 'What is this?'
+        assert messages[1].role == 'assistant'
+        assert messages[1].content == 'This is a test.'
+
+    def test_get_transcript_text(self):
+        ctx = ConversationContext(session_id='s1', brain_id='b1')
+        ctx.transcript_entries = [
+            TranscriptEntry(session_id='s1', speaker=SpeakerType.USER, text='Hello'),
+            TranscriptEntry(session_id='s1', speaker=SpeakerType.OTHER, text='Hi')
+        ]
+
+        text = ctx.get_transcript_text()
+        assert 'You: Hello' in text
+        assert 'Them: Hi' in text
 
 
 class TestQueryExecutionServiceIntegration:

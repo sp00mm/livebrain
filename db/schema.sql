@@ -5,10 +5,23 @@ CREATE TABLE IF NOT EXISTS brains (
     name TEXT NOT NULL,
     description TEXT,
     default_model_config_json TEXT NOT NULL,
-    capabilities_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS brain_tools (
+    id TEXT PRIMARY KEY,
+    brain_id TEXT NOT NULL,
+    tool_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    config_json TEXT,
+    enabled INTEGER DEFAULT 1,
+    position INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (brain_id) REFERENCES brains(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_brain_tools_brain ON brain_tools(brain_id);
 
 CREATE TABLE IF NOT EXISTS questions (
     id TEXT PRIMARY KEY,
@@ -16,7 +29,6 @@ CREATE TABLE IF NOT EXISTS questions (
     text TEXT NOT NULL,
     position INTEGER NOT NULL,
     model_config_override_json TEXT,
-    capabilities_override_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (brain_id) REFERENCES brains(id) ON DELETE CASCADE

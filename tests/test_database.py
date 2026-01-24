@@ -1,21 +1,17 @@
-"""
-Tests for Livebrain database layer.
-"""
-
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models import (
-    Brain, Question, Resource, DocumentChunk, Session,
+    Brain, BrainTool, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    MCPServer, ModelConfig, BrainCapabilities,
+    MCPServer, ModelConfig, ToolType,
     FileReference, SpeakerType, QueryType, ResourceType,
     IndexStatus, StepType, StepStatus, MCPStatus
 )
 from services.database import (
-    BrainRepository, QuestionRepository, ResourceRepository,
+    BrainRepository, BrainToolRepository, QuestionRepository, ResourceRepository,
     DocumentChunkRepository, SessionRepository, TranscriptEntryRepository,
     InteractionRepository, AIResponseRepository, ExecutionStepRepository,
     MCPServerRepository, UserSettingsRepository, RAGService
@@ -109,27 +105,114 @@ class TestBrainRepository:
         assert fetched.default_model_config.top_p == 0.9
         assert fetched.default_model_config.extra_params == {"custom": "value"}
 
-    def test_brain_capabilities_persistence(self, db):
-        repo = BrainRepository(db)
-        caps = BrainCapabilities(
-            conversation=True,
-            files=True,
-            images=False,
-            code=True,
-            web=False,
-            mcp_servers=["notion", "slack"]
+class TestBrainToolRepository:
+    def test_create_tool(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        tool_repo = BrainToolRepository(db)
+        tool = BrainTool(
+            brain_id=brain.id,
+            tool_type=ToolType.SEARCH_FILES,
+            name='Search Documents',
+            description='Search through linked files'
         )
-        brain = Brain(name="Caps Test", capabilities=caps)
-        repo.create(brain)
+        created = tool_repo.create(tool)
 
-        fetched = repo.get(brain.id)
+        assert created.id == tool.id
+        assert created.brain_id == brain.id
+        assert created.tool_type == ToolType.SEARCH_FILES
+        assert created.name == 'Search Documents'
 
-        assert fetched.capabilities.conversation is True
-        assert fetched.capabilities.files is True
-        assert fetched.capabilities.images is False
-        assert fetched.capabilities.code is True
-        assert fetched.capabilities.web is False
-        assert fetched.capabilities.mcp_servers == ["notion", "slack"]
+    def test_get_by_brain(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        tool_repo = BrainToolRepository(db)
+        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search', position=0))
+        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.WEB_SEARCH, name='Web', position=1))
+
+        tools = tool_repo.get_by_brain(brain.id)
+        assert len(tools) == 2
+        assert tools[0].tool_type == ToolType.SEARCH_FILES
+        assert tools[1].tool_type == ToolType.WEB_SEARCH
+
+    def test_get_enabled_by_brain(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        tool_repo = BrainToolRepository(db)
+        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search', enabled=True))
+        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.WEB_SEARCH, name='Web', enabled=False))
+
+        enabled = tool_repo.get_enabled_by_brain(brain.id)
+        assert len(enabled) == 1
+        assert enabled[0].tool_type == ToolType.SEARCH_FILES
+
+    def test_update_tool(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        tool_repo = BrainToolRepository(db)
+        tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search'))
+
+        tool.name = 'Updated Search'
+        tool.enabled = False
+        tool_repo.update(tool)
+
+        fetched = tool_repo.get(tool.id)
+        assert fetched.name == 'Updated Search'
+        assert fetched.enabled is False
+
+    def test_delete_tool(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        tool_repo = BrainToolRepository(db)
+        tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search'))
+
+        tool_repo.delete(tool.id)
+        assert tool_repo.get(tool.id) is None
+
+    def test_cascade_delete_on_brain(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        tool_repo = BrainToolRepository(db)
+        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search'))
+
+        brain_repo.delete(brain.id)
+        tools = tool_repo.get_by_brain(brain.id)
+        assert len(tools) == 0
+
+    def test_tool_config_persistence(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        tool_repo = BrainToolRepository(db)
+        tool = BrainTool(
+            brain_id=brain.id,
+            tool_type=ToolType.SEARCH_FILES,
+            name='Search',
+            config={'resource_ids': ['res-1', 'res-2']}
+        )
+        tool_repo.create(tool)
+
+        fetched = tool_repo.get(tool.id)
+        assert fetched.config == {'resource_ids': ['res-1', 'res-2']}
+
+    def test_tool_is_builtin(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        tool_repo = BrainToolRepository(db)
+        search_tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search'))
+        web_tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.WEB_SEARCH, name='Web'))
+        code_tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.CODE_INTERPRETER, name='Code'))
+
+        assert search_tool.is_builtin is False
+        assert web_tool.is_builtin is True
+        assert code_tool.is_builtin is True
 
 
 class TestQuestionRepository:
@@ -167,26 +250,24 @@ class TestQuestionRepository:
         assert questions[1].text == "Q2"
         assert questions[2].text == "Q3"
 
-    def test_question_with_overrides(self, db):
+    def test_question_with_model_override(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         question_repo = QuestionRepository(db)
         question = Question(
             brain_id=brain.id,
-            text="Detailed question",
+            text='Detailed question',
             position=0,
-            model_config_override=ModelConfig(model="gpt-4o", temperature=0.2),
-            capabilities_override=BrainCapabilities(conversation=True, files=False)
+            model_config_override=ModelConfig(model='gpt-4o', temperature=0.2)
         )
         question_repo.create(question)
 
         fetched = question_repo.get(question.id)
 
         assert fetched.model_config_override is not None
-        assert fetched.model_config_override.model == "gpt-4o"
-        assert fetched.capabilities_override is not None
-        assert fetched.capabilities_override.files is False
+        assert fetched.model_config_override.model == 'gpt-4o'
+        assert fetched.model_config_override.temperature == 0.2
 
     def test_cascade_delete_questions(self, db):
         brain_repo = BrainRepository(db)

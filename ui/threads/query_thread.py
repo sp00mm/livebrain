@@ -1,6 +1,6 @@
 from PySide6.QtCore import QThread, Signal
 
-from models import Brain, AIResponse, ExecutionStep, QueryType
+from models import Brain, AIResponse, ExecutionStep, QueryType, TranscriptEntry
 from services.database import Database
 from services.query_execution import QueryExecutionService, QueryContext, ExecutionCallbacks
 
@@ -12,7 +12,8 @@ class QueryExecutionThread(QThread):
     error = Signal(str)
 
     def __init__(self, db: Database, embedder, session_id: str, brain: Brain,
-                 query_text: str, query_type: QueryType = QueryType.FREEFORM,
+                 query_text: str, transcript: list[TranscriptEntry],
+                 query_type: QueryType = QueryType.FREEFORM,
                  question_id: str = None):
         super().__init__()
         self.db = db
@@ -20,6 +21,7 @@ class QueryExecutionThread(QThread):
         self.session_id = session_id
         self.brain = brain
         self.query_text = query_text
+        self.transcript = transcript
         self.query_type = query_type
         self.question_id = question_id
 
@@ -30,6 +32,7 @@ class QueryExecutionThread(QThread):
             session_id=self.session_id,
             brain=self.brain,
             query_text=self.query_text,
+            transcript=self.transcript,
             query_type=self.query_type,
             question_id=self.question_id
         )

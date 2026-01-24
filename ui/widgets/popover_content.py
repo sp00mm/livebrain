@@ -11,8 +11,9 @@ from PySide6.QtCore import Qt, QTimer, Signal
 
 import qtawesome as qta
 
-from models import Session, TranscriptEntry, SpeakerType, QueryType, StepType, ExecutionStep, Brain, Question, Resource, ResourceType, IndexStatus
+from models import Session, TranscriptEntry, SpeakerType, QueryType, StepType, ExecutionStep, Brain, BrainTool, ToolType, Question, Resource, ResourceType, IndexStatus
 from services.embedder import Embedder
+from services.database import BrainToolRepository
 from ui.threads import ModelDownloadThread, QueryExecutionThread, IndexThread, EstimateThread
 
 if TYPE_CHECKING:
@@ -380,13 +381,11 @@ class PopoverContent(QWidget):
         self._brain_desc_input = QLineEdit()
         layout.addWidget(self._brain_desc_input)
 
-        # Capabilities toggles
-        layout.addWidget(self._section_label('CAPABILITIES'))
-        self._conv_toggle = QCheckBox('Use conversation')
-        self._files_toggle = QCheckBox('Search linked resources')
+        # Tools
+        layout.addWidget(self._section_label('TOOLS'))
+        self._files_toggle = QCheckBox('Search files')
         self._web_toggle = QCheckBox('Search the web')
         self._code_toggle = QCheckBox('Run code')
-        layout.addWidget(self._conv_toggle)
         layout.addWidget(self._files_toggle)
         layout.addWidget(self._web_toggle)
         layout.addWidget(self._code_toggle)
@@ -544,11 +543,15 @@ class PopoverContent(QWidget):
         self._editing_brain = self._current_brain
         self._brain_name_input.setText(self._editing_brain.name)
         self._brain_desc_input.setText(self._editing_brain.description)
-        caps = self._editing_brain.capabilities
-        self._conv_toggle.setChecked(caps.conversation)
-        self._files_toggle.setChecked(caps.files)
-        self._web_toggle.setChecked(caps.web)
-        self._code_toggle.setChecked(caps.code)
+
+        tool_repo = BrainToolRepository(self.app.db)
+        tools = tool_repo.get_by_brain(self._editing_brain.id)
+        tool_types = {t.tool_type for t in tools if t.enabled}
+
+        self._files_toggle.setChecked(ToolType.SEARCH_FILES in tool_types)
+        self._web_toggle.setChecked(ToolType.WEB_SEARCH in tool_types)
+        self._code_toggle.setChecked(ToolType.CODE_INTERPRETER in tool_types)
+
         self._load_resource_links()
         self._stack.setCurrentIndex(1)
 
@@ -557,10 +560,31 @@ class PopoverContent(QWidget):
             return
         self._editing_brain.name = self._brain_name_input.text().strip() or 'Unnamed Brain'
         self._editing_brain.description = self._brain_desc_input.text().strip()
-        self._editing_brain.capabilities.conversation = self._conv_toggle.isChecked()
-        self._editing_brain.capabilities.files = self._files_toggle.isChecked()
-        self._editing_brain.capabilities.web = self._web_toggle.isChecked()
-        self._editing_brain.capabilities.code = self._code_toggle.isChecked()
+
+        tool_repo = BrainToolRepository(self.app.db)
+        existing_tools = tool_repo.get_by_brain(self._editing_brain.id)
+        existing_by_type = {t.tool_type: t for t in existing_tools}
+
+        tool_states = [
+            (ToolType.SEARCH_FILES, self._files_toggle.isChecked(), 'Search files', 'Search through linked files and folders'),
+            (ToolType.WEB_SEARCH, self._web_toggle.isChecked(), 'Search web', 'Search the web for information'),
+            (ToolType.CODE_INTERPRETER, self._code_toggle.isChecked(), 'Run code', 'Run and test code'),
+        ]
+
+        for tool_type, enabled, name, desc in tool_states:
+            if tool_type in existing_by_type:
+                tool = existing_by_type[tool_type]
+                if tool.enabled != enabled:
+                    tool.enabled = enabled
+                    tool_repo.update(tool)
+            elif enabled:
+                tool_repo.create(BrainTool(
+                    brain_id=self._editing_brain.id,
+                    tool_type=tool_type,
+                    name=name,
+                    description=desc,
+                    enabled=True
+                ))
 
         current_links = set(r.id for r in self.app.resource_repo.get_by_brain(self._editing_brain.id))
         new_links = set(rid for rid, cb in self._resource_checkboxes.items() if cb.isChecked())
@@ -719,12 +743,17 @@ class PopoverContent(QWidget):
         self._response.clear()
         self._query_status.setText('')
 
+        transcript = self._final_transcripts.copy()
+        if self._partial_entry:
+            transcript.append(self._partial_entry)
+
         self._query_thread = QueryExecutionThread(
             db=self.app.db,
             embedder=self.app.embedder,
             session_id=session.id,
             brain=brain,
             query_text=query_text,
+            transcript=transcript,
             query_type=query_type,
             question_id=question_id
         )

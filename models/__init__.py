@@ -12,12 +12,10 @@ import uuid
 
 
 def generate_id() -> str:
-    """Generate a new UUID string."""
     return str(uuid.uuid4())
 
 
 def now() -> datetime:
-    """Get current UTC datetime."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
@@ -26,13 +24,13 @@ def now() -> datetime:
 # =============================================================================
 
 class SpeakerType(Enum):
-    USER = "user"      # Microphone (you)
-    OTHER = "other"    # System audio (them)
+    USER = 'user'      # Microphone (you)
+    OTHER = 'other'    # System audio (them)
 
 
 class QueryType(Enum):
-    PRESET = "preset"      # Clicked a question
-    FREEFORM = "freeform"  # Typed in input box
+    PRESET = 'preset'      # Clicked a question
+    FREEFORM = 'freeform'  # Typed in input box
 
 
 class ResourceType(Enum):
@@ -41,10 +39,10 @@ class ResourceType(Enum):
 
 
 class IndexStatus(Enum):
-    PENDING = "pending"
-    INDEXING = "indexing"
-    INDEXED = "indexed"
-    FAILED = "failed"
+    PENDING = 'pending'
+    INDEXING = 'indexing'
+    INDEXED = 'indexed'
+    FAILED = 'failed'
 
 
 class StepType(Enum):
@@ -55,16 +53,23 @@ class StepType(Enum):
 
 
 class StepStatus(Enum):
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    IN_PROGRESS = 'in_progress'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
 
 
 class MCPStatus(Enum):
-    DISCONNECTED = "disconnected"
-    CONNECTING = "connecting"
-    CONNECTED = "connected"
-    ERROR = "error"
+    DISCONNECTED = 'disconnected'
+    CONNECTING = 'connecting'
+    CONNECTED = 'connected'
+    ERROR = 'error'
+
+
+class ToolType(Enum):
+    SEARCH_FILES = 'search_files'        # RAG - custom, client-side execution
+    WEB_SEARCH = 'web_search'            # Built-in, server-side
+    CODE_INTERPRETER = 'code_interpreter'  # Built-in, server-side
+    MCP_SERVER = 'mcp_server'            # Custom, client-side execution
 
 
 # =============================================================================
@@ -113,63 +118,44 @@ class ModelConfig:
         )
 
 
-@dataclass
-class BrainCapabilities:
-    """Enabled tools/capabilities for a brain."""
-    conversation: bool = True
-    files: bool = True
-    images: bool = True
-    code: bool = False
-    web: bool = False
-    mcp_servers: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            'conversation': self.conversation,
-            'files': self.files,
-            'images': self.images,
-            'code': self.code,
-            'web': self.web,
-            'mcp_servers': self.mcp_servers
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'BrainCapabilities':
-        return cls(
-            conversation=data.get('conversation', True),
-            files=data.get('files', True),
-            images=data.get('images', True),
-            code=data.get('code', False),
-            web=data.get('web', False),
-            mcp_servers=data.get('mcp_servers', [])
-        )
-
-
 # =============================================================================
 # Core Entities
 # =============================================================================
 
 @dataclass
 class Brain:
-    """A brain is a configuration object defining reasoning behavior and context."""
     id: str = field(default_factory=generate_id)
-    name: str = ""
-    description: str = ""
+    name: str = ''
+    description: str = ''
     default_model_config: ModelConfig = field(default_factory=lambda: ModelConfig(model='gpt-5-chat-latest'))
-    capabilities: BrainCapabilities = field(default_factory=BrainCapabilities)
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
 
 
 @dataclass
-class Question:
-    """A predefined prompt with its own execution configuration."""
+class BrainTool:
     id: str = field(default_factory=generate_id)
-    brain_id: str = ""
-    text: str = ""
+    brain_id: str = ''
+    tool_type: ToolType = ToolType.SEARCH_FILES
+    name: str = ''
+    description: str = ''
+    config: dict[str, Any] = field(default_factory=dict)
+    enabled: bool = True
+    position: int = 0
+    created_at: datetime = field(default_factory=now)
+
+    @property
+    def is_builtin(self) -> bool:
+        return self.tool_type in (ToolType.WEB_SEARCH, ToolType.CODE_INTERPRETER)
+
+
+@dataclass
+class Question:
+    id: str = field(default_factory=generate_id)
+    brain_id: str = ''
+    text: str = ''
     position: int = 0
     model_config_override: Optional[ModelConfig] = None
-    capabilities_override: Optional[BrainCapabilities] = None
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
 
