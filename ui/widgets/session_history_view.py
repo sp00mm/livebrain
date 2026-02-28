@@ -18,7 +18,7 @@ from ui.widgets.chat_feed import ChatFeedWidget
 class SessionCard(QFrame):
     clicked = Signal(object)
 
-    def __init__(self, session: Session, parent=None):
+    def __init__(self, session: Session, qa_count: int = 0, parent=None):
         super().__init__(parent)
         self.session = session
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -32,18 +32,23 @@ class SessionCard(QFrame):
             }}
         ''')
 
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(2)
+        layout.setSpacing(8)
 
-        name = QLabel(session.name or 'Untitled Session')
-        name.setStyleSheet(f'color: {TEXT_PRIMARY}; font-weight: 500;')
-        layout.addWidget(name)
+        left = QVBoxLayout()
+        left.setSpacing(2)
 
         date_str = session.created_at.strftime('%b %d, %Y  %I:%M %p') if session.created_at else ''
         date = QLabel(date_str)
-        date.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 11px;')
-        layout.addWidget(date)
+        date.setStyleSheet(f'color: {TEXT_PRIMARY}; font-weight: 500; font-size: 12px;')
+        left.addWidget(date)
+
+        count_label = QLabel(f'{qa_count} question{"s" if qa_count != 1 else ""}')
+        count_label.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 11px;')
+        left.addWidget(count_label)
+
+        layout.addLayout(left, 1)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -61,6 +66,7 @@ class SessionHistoryView(QWidget):
         self._feed_repo = ChatFeedItemRepository(db)
         self._current_brain_id = None
         self._current_session_id = None
+        self._exclude_session_id = None
         self._in_feed_view = False
 
         self.setStyleSheet(STYLE_SHEET)
@@ -124,9 +130,10 @@ class SessionHistoryView(QWidget):
         self._feed.setVisible(False)
         layout.addWidget(self._feed, 1)
 
-    def load_brain(self, brain_id: str):
+    def load_brain(self, brain_id: str, exclude_session_id: str = None):
         self._current_brain_id = brain_id
         self._current_session_id = None
+        self._exclude_session_id = exclude_session_id
         self._in_feed_view = False
         self._feed.setVisible(False)
         self._list_scroll.setVisible(True)
@@ -155,10 +162,16 @@ class SessionHistoryView(QWidget):
                 item.widget().deleteLater()
 
         sessions = self._session_repo.get_recent_for_brain(self._current_brain_id, limit=50)
+        session_ids = [s.id for s in sessions]
+        ids_with_items = self._feed_repo.get_session_ids_with_items(session_ids)
+        question_counts = self._feed_repo.get_question_counts(session_ids)
+
         shown = 0
         for session in sessions:
-            if self._feed_repo.get_by_session(session.id):
-                card = SessionCard(session)
+            if session.id == self._exclude_session_id:
+                continue
+            if session.id in ids_with_items:
+                card = SessionCard(session, qa_count=question_counts.get(session.id, 0))
                 card.clicked.connect(self._on_session_clicked)
                 self._list_layout.insertWidget(self._list_layout.count() - 1, card)
                 shown += 1

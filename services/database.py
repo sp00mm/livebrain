@@ -807,6 +807,26 @@ class ChatFeedItemRepository:
         max_pos = row[0]
         return 0 if max_pos is None else max_pos + 1
 
+    def get_session_ids_with_items(self, session_ids: list[str]) -> set[str]:
+        if not session_ids:
+            return set()
+        placeholders = ','.join(['?'] * len(session_ids))
+        cursor = self.conn.execute(
+            f'SELECT DISTINCT session_id FROM chat_feed_items WHERE session_id IN ({placeholders})',
+            session_ids
+        )
+        return {row[0] for row in cursor.fetchall()}
+
+    def get_question_counts(self, session_ids: list[str]) -> dict[str, int]:
+        if not session_ids:
+            return {}
+        placeholders = ','.join(['?'] * len(session_ids))
+        cursor = self.conn.execute(
+            f"SELECT session_id, COUNT(*) FROM chat_feed_items WHERE session_id IN ({placeholders}) AND item_type = 'question' GROUP BY session_id",
+            session_ids
+        )
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
     def _row_to_item(self, row) -> ChatFeedItem:
         return ChatFeedItem(
             id=row[0],
