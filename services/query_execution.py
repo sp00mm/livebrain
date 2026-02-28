@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+import os
 import time
 
 from models import (
@@ -12,10 +13,13 @@ from services.database import (
     RAGService, ResourceRepository
 )
 from services.llm import LLMService, Message
+from services.scanner import FileScanner
 from services.conversation import ConversationContextCache
 
 
 _context_cache = ConversationContextCache()
+
+IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp'}
 
 TOOLS = [
     {'type': 'web_search'},
@@ -81,7 +85,8 @@ class QueryExecutionService:
         interaction.resources_used = resource_ids
         self._interaction_repo.update(interaction)
 
-        system_prompt = self._build_system_prompt(ctx.brain)
+        file_context = self._gather_file_context(ctx.brain.id)
+        system_prompt = self._build_system_prompt(ctx.brain, file_context)
         messages = self._build_messages(conversation, ctx.query_text, rag_context)
 
         step = self._emit_step(interaction.id, StepType.GENERATING, callbacks.on_step)
@@ -178,12 +183,29 @@ class QueryExecutionService:
         messages.append(Message(role='user', content='\n\n'.join(content_parts)))
         return messages
 
-    def _build_system_prompt(self, brain: Brain) -> str:
-        if brain.system_prompt:
-            return brain.system_prompt
+    def _gather_file_context(self, brain_id: str) -> str:
+        resources = self._resource_repo.get_by_brain(brain_id)
+        files = [r for r in resources if r.resource_type == ResourceType.FILE]
+        scanner = FileScanner()
+        parts = []
+        for f in files:
+            ext = os.path.splitext(f.path)[1].lower()
+            if ext in IMAGE_EXTENSIONS:
+                continue
+            content = scanner.extract_text(f.path)
+            if content:
+                parts.append(f'[{f.name}]\n{content}')
+        return '\n---\n'.join(parts)
 
-        prompt = f'You are {brain.name}'
-        if brain.description:
-            prompt += f', {brain.description}'
-        prompt += '.\n\nAnswer based on the conversation and context. Be concise.'
+    def _build_system_prompt(self, brain: Brain, file_context: str = '') -> str:
+        if brain.system_prompt:
+            prompt = brain.system_prompt
+        else:
+            prompt = f'You are {brain.name}'
+            if brain.description:
+                prompt += f', {brain.description}'
+            prompt += '.\n\nAnswer based on the conversation and context. Be concise.'
+
+        if file_context:
+            prompt += '\n\nHere are reference documents for this brain:\n' + file_context
         return prompt
