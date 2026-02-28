@@ -11,7 +11,8 @@ from services.scanner import FileScanner
 from services.database import Database, RAGService, UserSettingsRepository, BrainRepository, QuestionRepository, ResourceRepository
 from services.updater import Updater
 from services.audio_service import AudioService
-from models import Brain
+from services.llm import LLMService
+from services.template_service import TemplateService
 
 from .status_bar import StatusBarController
 from .hotkeys import GlobalHotkeyManager
@@ -38,8 +39,9 @@ class MenuBarApp:
         self.resource_repo = ResourceRepository(self.db)
         self.updater = Updater()
         self.audio_service = AudioService(self.db)
+        self.llm_service = LLMService(self.db)
+        self.template_service = TemplateService(self.db, self.llm_service)
         self.embedder: Optional[Embedder] = None
-        self._default_brain: Optional[Brain] = None
 
         self._init_embedder()
 
@@ -49,11 +51,6 @@ class MenuBarApp:
 
         if os.path.exists(model_file):
             self.embedder = Embedder()
-            brains = self.brain_repo.get_all()
-            if brains:
-                self._default_brain = brains[0]
-            else:
-                self._default_brain = self.brain_repo.create(Brain(name='Default'))
 
     def _init_ui(self):
         self._signals = RecordingSignals()
