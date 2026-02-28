@@ -3,8 +3,7 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QTextEdit, QLabel, QScrollArea, QFrame,
-    QSizePolicy, QFileDialog, QMessageBox,
-    QListView, QTreeView, QAbstractItemView
+    QSizePolicy, QFileDialog, QMessageBox, QMenu
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -320,19 +319,27 @@ class BrainEditView(QWidget):
         self._is_new = False
 
     def _add_resource(self):
-        dialog = QFileDialog(self, 'Select Files or Folders')
-        dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
-        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-        for view in dialog.findChildren((QListView, QTreeView)):
-            view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        if not dialog.exec():
+        menu = QMenu(self)
+        menu.addAction('Add Files', self._add_files)
+        menu.addAction('Add Folder', self._add_folder)
+        btn = self.sender()
+        menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+
+    def _add_files(self):
+        paths, _ = QFileDialog.getOpenFileNames(self, 'Select Files')
+        if not paths:
             return
         self._ensure_brain_saved()
-        for path in dialog.selectedFiles():
-            if os.path.isdir(path):
-                self._add_folder_resource(path)
-            else:
-                self._add_file_resource(path)
+        for path in paths:
+            self._add_file_resource(path)
+        self._load_resources()
+
+    def _add_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, 'Select Folder')
+        if not folder:
+            return
+        self._ensure_brain_saved()
+        self._add_folder_resource(folder)
         self._load_resources()
 
     def _add_folder_resource(self, path):
