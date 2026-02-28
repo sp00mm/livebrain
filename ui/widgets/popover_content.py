@@ -11,6 +11,7 @@ from .brain_edit_view import BrainEditView
 from .settings_view import SettingsView
 from .template_wizard_view import TemplateWizardView
 from .onboarding import WelcomeView, ApiKeyView, TemplatePickerView
+from .session_history_view import SessionHistoryView
 
 if TYPE_CHECKING:
     from menubar.app import MenuBarApp
@@ -22,6 +23,7 @@ BRAIN_EDIT = 3
 SETTINGS = 4
 WELCOME = 5
 API_KEY = 6
+SESSION_HISTORY = 7
 
 
 class PopoverContent(QWidget):
@@ -45,6 +47,7 @@ class PopoverContent(QWidget):
         self._settings_view = SettingsView(app.db)
         self._welcome_view = WelcomeView()
         self._api_key_view = ApiKeyView()
+        self._session_history_view = SessionHistoryView(app.db)
 
         self._stack.addWidget(self._live_view)       # 0
         self._stack.addWidget(self._picker_view)     # 1
@@ -53,6 +56,7 @@ class PopoverContent(QWidget):
         self._stack.addWidget(self._settings_view)   # 4
         self._stack.addWidget(self._welcome_view)    # 5
         self._stack.addWidget(self._api_key_view)    # 6
+        self._stack.addWidget(self._session_history_view)  # 7
 
         self._wire_navigation()
         self._set_starting_view()
@@ -76,6 +80,9 @@ class PopoverContent(QWidget):
 
         self._settings_view.navigate_back.connect(lambda: self._stack.setCurrentIndex(LIVE))
 
+        self._live_view.navigate_to_history.connect(self._show_session_history)
+        self._session_history_view.navigate_back.connect(lambda: self._stack.setCurrentIndex(LIVE))
+
         self._welcome_view.next_clicked.connect(lambda: self._stack.setCurrentIndex(API_KEY))
         self._api_key_view.api_key_submitted.connect(self._on_api_key_submitted)
 
@@ -85,6 +92,11 @@ class PopoverContent(QWidget):
             self._stack.setCurrentIndex(LIVE)
         else:
             self._stack.setCurrentIndex(WELCOME)
+
+    def _show_session_history(self):
+        if self._live_view._active_brain:
+            self._session_history_view.load_brain(self._live_view._active_brain.id)
+            self._stack.setCurrentIndex(SESSION_HISTORY)
 
     def _show_wizard(self, template_key: str):
         self._wizard_view.load_template(template_key)

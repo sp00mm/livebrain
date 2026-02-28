@@ -73,6 +73,7 @@ class LiveView(QWidget):
     navigate_to_picker = Signal()
     navigate_to_brain_edit = Signal(str)
     navigate_to_settings = Signal()
+    navigate_to_history = Signal()
     pop_out_requested = Signal()
 
     def __init__(self, app: 'MenuBarApp'):
@@ -139,6 +140,15 @@ class LiveView(QWidget):
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.clicked.connect(self.navigate_to_picker.emit)
         header.addWidget(add_btn)
+
+        history_btn = QPushButton()
+        history_btn.setObjectName('iconBtn')
+        history_btn.setIcon(qta.icon('mdi.history', color='#888888'))
+        history_btn.setFixedSize(24, 24)
+        history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        history_btn.setToolTip('Session history')
+        history_btn.clicked.connect(self.navigate_to_history.emit)
+        header.addWidget(history_btn)
 
         settings_btn = QPushButton()
         settings_btn.setObjectName('iconBtn')
