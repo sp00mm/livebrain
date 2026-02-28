@@ -1,0 +1,468 @@
+from typing import TYPE_CHECKING, Optional
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QLineEdit, QLabel, QComboBox, QScrollArea, QFrame,
+    QSizePolicy, QTextEdit
+)
+from PySide6.QtCore import Qt, Signal
+
+import qtawesome as qta
+
+from models import (
+    Brain, Question, Session, TranscriptEntry, SpeakerType,
+    QueryType, StepType, StepStatus, ExecutionStep, AIResponse
+)
+from ui.styles import (
+    STYLE_SHEET, BG_CARD, BG_CARD_HOVER, BG_PRIMARY, BG_RESPONSE,
+    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_SECTION, RECORDING_COLOR, ACCENT
+)
+from ui.threads import QueryExecutionThread
+
+if TYPE_CHECKING:
+    from menubar.app import MenuBarApp
+
+
+class LiveQuestionRow(QFrame):
+    clicked = Signal(object)
+
+    def __init__(self, question: Question, parent=None):
+        super().__init__(parent)
+        self.question = question
+        self.setObjectName('questionRow')
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._active = False
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(8)
+
+        self._indicator = QLabel('')
+        self._indicator.setFixedWidth(12)
+        self._indicator.setStyleSheet(f'color: {TEXT_SECONDARY};')
+        layout.addWidget(self._indicator)
+
+        self._text_label = QLabel(question.text)
+        self._text_label.setStyleSheet('color: #d0d0d0;')
+        self._text_label.setWordWrap(True)
+        self._text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(self._text_label, 1)
+
+    def set_active(self, active: bool):
+        self._active = active
+        if active:
+            self._indicator.setText('\u25b6')
+            self._indicator.setStyleSheet(f'color: {ACCENT};')
+            self.setStyleSheet(f'QFrame#questionRow {{ background-color: {BG_CARD_HOVER}; border-radius: 6px; }}')
+        else:
+            self._indicator.setText('')
+            self._indicator.setStyleSheet(f'color: {TEXT_SECONDARY};')
+            self.setStyleSheet('')
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.question)
+        super().mousePressEvent(event)
+
+
+class LiveView(QWidget):
+    navigate_to_picker = Signal()
+    navigate_to_brain_edit = Signal(str)
+    navigate_to_settings = Signal()
+
+    def __init__(self, app: 'MenuBarApp'):
+        super().__init__()
+        self.app = app
+        self._active_brain: Optional[Brain] = None
+        self._query_thread: Optional[QueryExecutionThread] = None
+        self._question_rows: list[LiveQuestionRow] = []
+        self._active_question_id: Optional[str] = None
+        self._final_transcripts: list[TranscriptEntry] = []
+        self._partial_entry: Optional[TranscriptEntry] = None
+        self._answer_history: list[tuple[str, str]] = []
+        self._current_query_text: Optional[str] = None
+        self._current_answer_text = ''
+        self._history_visible = False
+
+        self.setStyleSheet(STYLE_SHEET)
+        self._setup_ui()
+        self.refresh_brains()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 12, 16, 12)
+
+        layout.addLayout(self._build_header())
+        layout.addWidget(self._build_transcript_area())
+        layout.addWidget(self._build_questions_area())
+        layout.addWidget(self._build_answer_area(), 1)
+        layout.addLayout(self._build_input_area())
+
+    def _build_header(self) -> QHBoxLayout:
+        header = QHBoxLayout()
+        header.setSpacing(8)
+
+        self._brain_combo = QComboBox()
+        self._brain_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._brain_combo.currentIndexChanged.connect(self._on_brain_changed)
+        header.addWidget(self._brain_combo, 1)
+
+        add_btn = QPushButton()
+        add_btn.setObjectName('iconBtn')
+        add_btn.setIcon(qta.icon('mdi.plus', color='#888888'))
+        add_btn.setFixedSize(24, 24)
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.clicked.connect(self.navigate_to_picker.emit)
+        header.addWidget(add_btn)
+
+        settings_btn = QPushButton()
+        settings_btn.setObjectName('iconBtn')
+        settings_btn.setIcon(qta.icon('mdi.cog', color='#888888'))
+        settings_btn.setFixedSize(24, 24)
+        settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        settings_btn.clicked.connect(self.navigate_to_settings.emit)
+        header.addWidget(settings_btn)
+
+        return header
+
+    def _build_transcript_area(self) -> QWidget:
+        self._transcript_container = QWidget()
+        layout = QVBoxLayout(self._transcript_container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._record_btn = QPushButton('Start Recording')
+        self._record_btn.setStyleSheet(f'''
+            QPushButton {{
+                background-color: {RECORDING_COLOR};
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                color: white;
+                font-weight: 600;
+                font-size: 14px;
+            }}
+            QPushButton:hover {{
+                background-color: #ff6666;
+            }}
+        ''')
+        self._record_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._record_btn.clicked.connect(self._toggle_recording)
+        layout.addWidget(self._record_btn)
+
+        self._listening_bar = QWidget()
+        self._listening_bar.setVisible(False)
+        self._listening_bar.setCursor(Qt.CursorShape.PointingHandCursor)
+        listening_layout = QHBoxLayout(self._listening_bar)
+        listening_layout.setContentsMargins(10, 8, 10, 8)
+        listening_layout.setSpacing(6)
+
+        self._listening_icon = QLabel('\U0001f3a7')
+        listening_layout.addWidget(self._listening_icon)
+
+        self._listening_label = QLabel('Listening...')
+        self._listening_label.setStyleSheet(f'color: {RECORDING_COLOR}; font-weight: 500;')
+        listening_layout.addWidget(self._listening_label)
+
+        self._listening_text = QLabel('')
+        self._listening_text.setStyleSheet(f'color: {TEXT_SECONDARY};')
+        self._listening_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._listening_text.setWordWrap(False)
+        listening_layout.addWidget(self._listening_text, 1)
+
+        self._listening_bar.setStyleSheet(f'''
+            QWidget {{
+                background-color: {BG_CARD};
+                border-radius: 8px;
+            }}
+        ''')
+        layout.addWidget(self._listening_bar)
+
+        self._listening_bar.mousePressEvent = lambda e: self._toggle_recording()
+
+        return self._transcript_container
+
+    def _build_questions_area(self) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        label = QLabel('QUESTIONS')
+        label.setObjectName('sectionLabel')
+        layout.addWidget(label)
+
+        self._questions_scroll = QScrollArea()
+        self._questions_scroll.setWidgetResizable(True)
+        self._questions_scroll.setMaximumHeight(160)
+        self._questions_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self._questions_widget = QWidget()
+        self._questions_layout = QVBoxLayout(self._questions_widget)
+        self._questions_layout.setSpacing(4)
+        self._questions_layout.setContentsMargins(0, 0, 0, 0)
+        self._questions_layout.addStretch()
+        self._questions_scroll.setWidget(self._questions_widget)
+        layout.addWidget(self._questions_scroll)
+
+        return container
+
+    def _build_answer_area(self) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
+
+        label = QLabel('LIVEBRAIN SAYS')
+        label.setObjectName('sectionLabel')
+        header_row.addWidget(label)
+
+        self._history_btn = QPushButton()
+        self._history_btn.setObjectName('iconBtn')
+        self._history_btn.setVisible(False)
+        self._history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._history_btn.clicked.connect(self._toggle_history)
+        header_row.addWidget(self._history_btn)
+
+        header_row.addStretch()
+        layout.addLayout(header_row)
+
+        self._answer_status = QLabel('')
+        self._answer_status.setStyleSheet(f'color: {TEXT_SECTION}; font-size: 11px; font-style: italic;')
+        layout.addWidget(self._answer_status)
+
+        self._answer_text = QTextEdit()
+        self._answer_text.setObjectName('responseBox')
+        self._answer_text.setReadOnly(True)
+        self._answer_text.setPlaceholderText('Click a question or start recording')
+        self._answer_text.setMinimumHeight(80)
+        layout.addWidget(self._answer_text, 1)
+
+        self._history_scroll = QScrollArea()
+        self._history_scroll.setWidgetResizable(True)
+        self._history_scroll.setVisible(False)
+        self._history_scroll.setMaximumHeight(200)
+        self._history_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self._history_widget = QWidget()
+        self._history_layout = QVBoxLayout(self._history_widget)
+        self._history_layout.setContentsMargins(0, 0, 0, 0)
+        self._history_layout.setSpacing(8)
+        self._history_layout.addStretch()
+        self._history_scroll.setWidget(self._history_widget)
+        layout.addWidget(self._history_scroll)
+
+        return container
+
+    def _build_input_area(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(8)
+
+        self._input = QLineEdit()
+        self._input.setPlaceholderText('Ask anything...')
+        self._input.returnPressed.connect(self._send_freeform)
+        row.addWidget(self._input, 1)
+
+        send_btn = QPushButton()
+        send_btn.setObjectName('iconBtn')
+        send_btn.setIcon(qta.icon('mdi.send', color='#888888'))
+        send_btn.setFixedSize(28, 28)
+        send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        send_btn.clicked.connect(self._send_freeform)
+        row.addWidget(send_btn)
+
+        return row
+
+    # -- LB-032: Brain dropdown --
+
+    def refresh_brains(self):
+        self._brain_combo.blockSignals(True)
+        self._brain_combo.clear()
+        brains = self.app.brain_repo.get_all()
+        for brain in brains:
+            self._brain_combo.addItem(brain.name, brain.id)
+        if brains:
+            self._active_brain = brains[0]
+            self._brain_combo.setCurrentIndex(0)
+            self.load_questions(brains[0].id)
+        self._brain_combo.blockSignals(False)
+
+    def set_active_brain(self, brain_id: str):
+        for i in range(self._brain_combo.count()):
+            if self._brain_combo.itemData(i) == brain_id:
+                self._brain_combo.setCurrentIndex(i)
+                return
+
+    def _on_brain_changed(self, index):
+        if index < 0:
+            return
+        brain_id = self._brain_combo.itemData(index)
+        self._active_brain = self.app.brain_repo.get(brain_id)
+        self.load_questions(brain_id)
+
+    # -- LB-033: Transcript indicator --
+
+    def _toggle_recording(self):
+        if self.app.audio_service.is_recording():
+            self._stop_recording()
+        else:
+            self._start_recording()
+
+    def _start_recording(self):
+        session = Session(name='Recording Session')
+        self.app.audio_service.start_session(session, self._on_transcript)
+        self._final_transcripts = []
+        self._partial_entry = None
+        self._record_btn.setVisible(False)
+        self._listening_bar.setVisible(True)
+        self._listening_text.setText('')
+
+    def _stop_recording(self):
+        self.app.audio_service.stop_session()
+        self._record_btn.setVisible(True)
+        self._listening_bar.setVisible(False)
+
+    def _on_transcript(self, entry: TranscriptEntry, is_final: bool):
+        if is_final:
+            self._final_transcripts.append(entry)
+            self._partial_entry = None
+        else:
+            self._partial_entry = entry
+        last = entry.text
+        if len(last) > 60:
+            last = '...' + last[-57:]
+        self._listening_text.setText(last)
+
+    # -- LB-034: Questions list --
+
+    def load_questions(self, brain_id: str):
+        while self._questions_layout.count() > 1:
+            item = self._questions_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        self._question_rows = []
+        questions = self.app.question_repo.get_by_brain(brain_id)
+        for q in questions:
+            row = LiveQuestionRow(q)
+            row.clicked.connect(self._on_question_clicked)
+            self._question_rows.append(row)
+            self._questions_layout.insertWidget(self._questions_layout.count() - 1, row)
+
+    def _on_question_clicked(self, question: Question):
+        self._set_active_question(question.id)
+        self._execute_query(question.text, QueryType.PRESET, question.id)
+
+    def _set_active_question(self, question_id: Optional[str]):
+        self._active_question_id = question_id
+        for row in self._question_rows:
+            row.set_active(row.question.id == question_id)
+
+    # -- LB-035 & LB-037: Query execution --
+
+    def _send_freeform(self):
+        text = self._input.text().strip()
+        if not text:
+            return
+        self._input.clear()
+        self._set_active_question(None)
+        self._execute_query(text, QueryType.FREEFORM)
+
+    def _execute_query(self, query_text: str, query_type: QueryType, question_id: str = None):
+        brain = self._active_brain
+        if not brain:
+            return
+
+        session = self.app.audio_service.get_current_session()
+        session_id = session.id if session else ''
+
+        if self._current_query_text and self._current_answer_text:
+            self._answer_history.append((self._current_query_text, self._current_answer_text))
+            self._update_history_btn()
+
+        self._current_query_text = query_text
+        self._current_answer_text = ''
+        self._answer_text.clear()
+        self._answer_status.setText('LiveBrain is working...')
+
+        transcript = self._final_transcripts.copy()
+        if self._partial_entry:
+            transcript.append(self._partial_entry)
+
+        self._query_thread = QueryExecutionThread(
+            db=self.app.db,
+            embedder=self.app.embedder,
+            session_id=session_id,
+            brain=brain,
+            query_text=query_text,
+            transcript=transcript,
+            query_type=query_type,
+            question_id=question_id
+        )
+        self._query_thread.step_update.connect(self._on_step_update)
+        self._query_thread.delta.connect(self._on_delta)
+        self._query_thread.complete.connect(self._on_complete)
+        self._query_thread.start()
+
+    def _on_step_update(self, step: ExecutionStep):
+        if step.status == StepStatus.COMPLETED:
+            return
+        labels = {
+            StepType.LISTENING: 'Listening to the conversation',
+            StepType.SEARCHING_FILES: 'Looking through your files',
+            StepType.GENERATING: 'Thinking...',
+        }
+        self._answer_status.setText(labels.get(step.step_type, 'LiveBrain is working...'))
+
+    def _on_delta(self, text: str):
+        self._current_answer_text += text
+        self._answer_text.insertPlainText(text)
+
+    def _on_complete(self, response: AIResponse):
+        self._answer_status.setText('')
+
+    # -- LB-036: Previous answers --
+
+    def _update_history_btn(self):
+        count = len(self._answer_history)
+        if count > 0:
+            self._history_btn.setVisible(True)
+            label = f'Previous ({count})'
+            self._history_btn.setText(label)
+            self._history_btn.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 11px;')
+            self._history_btn.setFixedSize(self._history_btn.sizeHint())
+
+    def _toggle_history(self):
+        self._history_visible = not self._history_visible
+        self._history_scroll.setVisible(self._history_visible)
+        if self._history_visible:
+            self._render_history()
+
+    def _render_history(self):
+        while self._history_layout.count() > 1:
+            item = self._history_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        for query_text, answer_text in reversed(self._answer_history):
+            card = QFrame()
+            card.setStyleSheet(f'background-color: {BG_CARD}; border-radius: 6px; padding: 8px;')
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(8, 6, 8, 6)
+            card_layout.setSpacing(4)
+
+            q_label = QLabel(query_text)
+            q_label.setStyleSheet(f'color: {TEXT_PRIMARY}; font-weight: 600; font-size: 12px;')
+            q_label.setWordWrap(True)
+            card_layout.addWidget(q_label)
+
+            a_label = QLabel(answer_text)
+            a_label.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px;')
+            a_label.setWordWrap(True)
+            card_layout.addWidget(a_label)
+
+            self._history_layout.insertWidget(self._history_layout.count() - 1, card)
