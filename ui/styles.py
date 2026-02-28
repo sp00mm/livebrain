@@ -26,6 +26,12 @@ RECORDING_COLOR = '#ff4444'
 ERROR_COLOR = '#ff6b6b'
 USER_COLOR = '#5fb85f'
 
+FEED_DIVIDER = '#3a3a3a'
+FEED_QUESTION_BG = '#2a2a2a'
+FEED_ANSWER_ACTIVE = '#e0e0e0'
+FEED_ANSWER_FADED = '#999999'
+FEED_STATUS_COLOR = '#707070'
+
 FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif'
 FONT_SIZE = '13px'
 
