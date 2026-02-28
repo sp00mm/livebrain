@@ -157,7 +157,6 @@ CREATE TABLE IF NOT EXISTS chat_feed_items (
     session_id TEXT NOT NULL,
     item_type TEXT NOT NULL,
     content TEXT NOT NULL DEFAULT '',
-    metadata_json TEXT DEFAULT '{}',
     position INTEGER NOT NULL,
     thread_id TEXT,
     created_at TEXT NOT NULL,

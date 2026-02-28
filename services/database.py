@@ -770,14 +770,13 @@ class ChatFeedItemRepository:
     def create(self, item: ChatFeedItem) -> ChatFeedItem:
         self.conn.execute('''
             INSERT INTO chat_feed_items (id, session_id, item_type, content,
-                                         metadata_json, position, thread_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                         position, thread_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', [
             item.id,
             item.session_id,
             item.item_type.value,
             item.content,
-            item.metadata_json,
             item.position,
             item.thread_id,
             _dt_to_str(item.created_at)
@@ -814,10 +813,9 @@ class ChatFeedItemRepository:
             session_id=row[1],
             item_type=FeedItemType(row[2]),
             content=row[3],
-            metadata_json=row[4] or '{}',
-            position=row[5],
-            thread_id=row[6],
-            created_at=_str_to_dt(row[7])
+            position=row[4],
+            thread_id=row[5],
+            created_at=_str_to_dt(row[6])
         )
 
 

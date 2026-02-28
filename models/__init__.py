@@ -210,7 +210,6 @@ class ChatFeedItem:
     session_id: str = ''
     item_type: FeedItemType = FeedItemType.TRANSCRIPT
     content: str = ''
-    metadata_json: str = '{}'
     position: int = 0
     thread_id: Optional[str] = None
     created_at: datetime = field(default_factory=now)

@@ -142,8 +142,6 @@ class SessionHistoryView(QWidget):
         self._feed.load_from_items(items)
 
     def _export_transcript(self):
-        if not self._current_session_id:
-            return
         items = self._feed_repo.get_by_session(self._current_session_id)
         lines = []
         for item in items:

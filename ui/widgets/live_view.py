@@ -73,7 +73,7 @@ class LiveView(QWidget):
     navigate_to_picker = Signal()
     navigate_to_brain_edit = Signal(str)
     navigate_to_settings = Signal()
-    navigate_to_history = Signal()
+    navigate_to_history = Signal(str)
     pop_out_requested = Signal()
 
     def __init__(self, app: 'MenuBarApp'):
@@ -147,7 +147,7 @@ class LiveView(QWidget):
         history_btn.setFixedSize(24, 24)
         history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         history_btn.setToolTip('Session history')
-        history_btn.clicked.connect(self.navigate_to_history.emit)
+        history_btn.clicked.connect(lambda: self.navigate_to_history.emit(self._active_brain.id) if self._active_brain else None)
         header.addWidget(history_btn)
 
         settings_btn = QPushButton()
@@ -315,22 +315,14 @@ class LiveView(QWidget):
         self._session_repo.create(self._session)
 
     def _load_session_feed(self):
-        if not self._active_brain:
-            self._chat_feed.clear_feed()
-            return
-        sessions = self._session_repo.get_recent_for_brain(self._active_brain.id, limit=2)
-        prior = [s for s in sessions if s.id != (self._session.id if self._session else None)]
-        if prior:
-            items = self._feed_repo.get_by_session(prior[0].id)
-            self._chat_feed.load_from_items(items)
-        else:
-            self._chat_feed.clear_feed()
+        self._chat_feed.clear_feed()
 
     def _cleanup_threads(self):
         for thread in self._active_threads.values():
             thread.quit()
             thread.wait(2000)
         self._active_threads.clear()
+        self._answer_feed_ids.clear()
 
     def _toggle_recording(self):
         if self.app.audio_service.is_recording():
@@ -414,8 +406,9 @@ class LiveView(QWidget):
         if self._partial_entry:
             transcript.append(self._partial_entry)
 
+        pos = self._feed_repo.get_next_position(session_id)
+
         if transcript:
-            pos = self._feed_repo.get_next_position(session_id)
             transcript_text = '\n'.join(e.text for e in transcript[-5:])
             self._feed_repo.create(ChatFeedItem(
                 session_id=session_id,
@@ -424,8 +417,8 @@ class LiveView(QWidget):
                 position=pos
             ))
             self._chat_feed.add_transcript_divider('transcript', transcript_text)
+            pos += 1
 
-        pos = self._feed_repo.get_next_position(session_id)
         self._feed_repo.create(ChatFeedItem(
             session_id=session_id,
             item_type=FeedItemType.QUESTION,
@@ -433,8 +426,8 @@ class LiveView(QWidget):
             position=pos
         ))
         self._chat_feed.add_question(query_text)
+        pos += 1
 
-        pos = self._feed_repo.get_next_position(session_id)
         answer_item = ChatFeedItem(
             session_id=session_id,
             item_type=FeedItemType.ANSWER,
@@ -447,8 +440,8 @@ class LiveView(QWidget):
         self._chat_feed.add_answer(thread_id)
 
         conversation = self._conversation_cache.get(session_id, brain.id)
-        conversation.add_transcript_entries(transcript)
         snap = conversation.snapshot()
+        snap.add_transcript_entries(transcript)
 
         thread = QueryExecutionThread(
             db=self.app.db,
@@ -486,8 +479,9 @@ class LiveView(QWidget):
     def _on_complete(self, thread_id: str, response: AIResponse):
         self._chat_feed.remove_status(thread_id)
         self._chat_feed.set_answer_complete(thread_id)
-        if thread_id in self._answer_feed_ids:
-            self._feed_repo.update_content(self._answer_feed_ids[thread_id], response.text)
+        feed_id = self._answer_feed_ids.pop(thread_id, None)
+        if feed_id:
+            self._feed_repo.update_content(feed_id, response.text)
 
     def _on_thread_finished(self, thread_id: str):
         self._active_threads.pop(thread_id, None)

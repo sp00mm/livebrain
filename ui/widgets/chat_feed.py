@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from models import FeedItemType
 from ui.styles import (
     BG_CARD, TEXT_SECONDARY, TEXT_DIM,
     FEED_DIVIDER, FEED_QUESTION_BG, FEED_ANSWER_ACTIVE,
@@ -181,11 +182,11 @@ class ChatFeedWidget(QWidget):
     def load_from_items(self, items):
         self.clear_feed()
         for item in items:
-            if item.item_type.value == 'transcript':
+            if item.item_type == FeedItemType.TRANSCRIPT:
                 self.add_transcript_divider(item.content)
-            elif item.item_type.value == 'question':
+            elif item.item_type == FeedItemType.QUESTION:
                 self.add_question(item.content)
-            elif item.item_type.value == 'answer':
+            elif item.item_type == FeedItemType.ANSWER:
                 answer = self.add_answer(item.thread_id or item.id)
                 answer.set_text(item.content)
                 answer.set_complete()
