@@ -93,9 +93,8 @@ class PopoverContent(QWidget):
         else:
             self._stack.setCurrentIndex(WELCOME)
 
-    def _show_session_history(self, brain_id: str):
-        current_session_id = self._live_view._session.id if self._live_view._session else None
-        self._session_history_view.load_brain(brain_id, exclude_session_id=current_session_id)
+    def _show_session_history(self, brain_id: str, session_id: str):
+        self._session_history_view.load_brain(brain_id, exclude_session_id=session_id or None)
         self._stack.setCurrentIndex(SESSION_HISTORY)
 
     def _show_wizard(self, template_key: str):
