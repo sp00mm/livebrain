@@ -31,6 +31,7 @@ class QueryContext:
     transcript: list[TranscriptEntry] = field(default_factory=list)
     query_type: QueryType = QueryType.FREEFORM
     question_id: Optional[str] = None
+    conversation_snapshot: Optional[object] = None
 
 
 @dataclass
@@ -56,7 +57,7 @@ class QueryExecutionService:
         start_time = time.time()
 
         interaction = self._create_interaction(ctx)
-        conversation = _context_cache.get(ctx.session_id, ctx.brain.id)
+        real_cache = _context_cache.get(ctx.session_id, ctx.brain.id)
 
         transcript_ids = []
         rag_context = ''
@@ -64,7 +65,8 @@ class QueryExecutionService:
         resource_ids = []
 
         step = self._emit_step(interaction.id, StepType.LISTENING, callbacks.on_step)
-        conversation.add_transcript_entries(ctx.transcript)
+        real_cache.add_transcript_entries(ctx.transcript)
+        conversation = ctx.conversation_snapshot or real_cache
         transcript_ids = conversation.get_transcript_ids()
         self._complete_step(step.id, callbacks.on_step)
 
@@ -97,7 +99,7 @@ class QueryExecutionService:
                 break
         self._complete_step(step.id, callbacks.on_step)
 
-        conversation.add_qa(ctx.query_text, llm_response.text)
+        real_cache.add_qa(ctx.query_text, llm_response.text)
 
         latency_ms = int((time.time() - start_time) * 1000)
         response = AIResponse(
