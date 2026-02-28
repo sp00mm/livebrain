@@ -61,6 +61,7 @@ class SessionHistoryView(QWidget):
         self._feed_repo = ChatFeedItemRepository(db)
         self._current_brain_id = None
         self._current_session_id = None
+        self._in_feed_view = False
 
         self.setStyleSheet(STYLE_SHEET)
         self._setup_ui()
@@ -73,13 +74,13 @@ class SessionHistoryView(QWidget):
         header = QHBoxLayout()
         header.setSpacing(8)
 
-        back_btn = QPushButton()
-        back_btn.setObjectName('iconBtn')
-        back_btn.setIcon(qta.icon('mdi.arrow-left', color='#888888'))
-        back_btn.setFixedSize(24, 24)
-        back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        back_btn.clicked.connect(self.navigate_back.emit)
-        header.addWidget(back_btn)
+        self._back_btn = QPushButton()
+        self._back_btn.setObjectName('iconBtn')
+        self._back_btn.setIcon(qta.icon('mdi.arrow-left', color='#888888'))
+        self._back_btn.setFixedSize(24, 24)
+        self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._back_btn.clicked.connect(self._handle_back)
+        header.addWidget(self._back_btn)
 
         title = QLabel('Session History')
         title.setStyleSheet(f'color: {TEXT_PRIMARY}; font-weight: 600; font-size: 14px;')
@@ -94,6 +95,16 @@ class SessionHistoryView(QWidget):
         self._export_btn.setVisible(False)
         self._export_btn.clicked.connect(self._export_transcript)
         header.addWidget(self._export_btn)
+
+        self._delete_btn = QPushButton()
+        self._delete_btn.setObjectName('iconBtn')
+        self._delete_btn.setIcon(qta.icon('mdi.delete-outline', color='#888888'))
+        self._delete_btn.setFixedSize(24, 24)
+        self._delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._delete_btn.setToolTip('Delete session')
+        self._delete_btn.setVisible(False)
+        self._delete_btn.clicked.connect(self._delete_session)
+        header.addWidget(self._delete_btn)
 
         layout.addLayout(header)
 
@@ -116,10 +127,26 @@ class SessionHistoryView(QWidget):
     def load_brain(self, brain_id: str):
         self._current_brain_id = brain_id
         self._current_session_id = None
+        self._in_feed_view = False
         self._feed.setVisible(False)
         self._list_scroll.setVisible(True)
         self._export_btn.setVisible(False)
+        self._delete_btn.setVisible(False)
         self._refresh_list()
+
+    def _handle_back(self):
+        if self._in_feed_view:
+            self._show_list()
+        else:
+            self.navigate_back.emit()
+
+    def _show_list(self):
+        self._in_feed_view = False
+        self._feed.setVisible(False)
+        self._list_scroll.setVisible(True)
+        self._export_btn.setVisible(False)
+        self._delete_btn.setVisible(False)
+        self._current_session_id = None
 
     def _refresh_list(self):
         while self._list_layout.count() > 1:
@@ -128,10 +155,19 @@ class SessionHistoryView(QWidget):
                 item.widget().deleteLater()
 
         sessions = self._session_repo.get_recent_for_brain(self._current_brain_id, limit=50)
+        shown = 0
         for session in sessions:
-            card = SessionCard(session)
-            card.clicked.connect(self._on_session_clicked)
-            self._list_layout.insertWidget(self._list_layout.count() - 1, card)
+            if self._feed_repo.get_by_session(session.id):
+                card = SessionCard(session)
+                card.clicked.connect(self._on_session_clicked)
+                self._list_layout.insertWidget(self._list_layout.count() - 1, card)
+                shown += 1
+
+        if shown == 0:
+            empty = QLabel('No past sessions yet')
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px; padding: 24px;')
+            self._list_layout.insertWidget(0, empty)
 
     def _on_session_clicked(self, session: Session):
         self._current_session_id = session.id
@@ -139,7 +175,14 @@ class SessionHistoryView(QWidget):
         self._list_scroll.setVisible(False)
         self._feed.setVisible(True)
         self._export_btn.setVisible(True)
+        self._delete_btn.setVisible(True)
         self._feed.load_from_items(items)
+        self._in_feed_view = True
+
+    def _delete_session(self):
+        self._session_repo.delete(self._current_session_id)
+        self._show_list()
+        self._refresh_list()
 
     def _export_transcript(self):
         items = self._feed_repo.get_by_session(self._current_session_id)
