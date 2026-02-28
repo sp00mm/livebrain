@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QLabel, QComboBox, QScrollArea, QFrame,
-    QSizePolicy, QTextEdit
+    QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -11,14 +11,17 @@ import qtawesome as qta
 
 from models import (
     Brain, Question, Session, TranscriptEntry, SpeakerType,
-    QueryType, StepType, StepStatus, ExecutionStep, AIResponse
+    QueryType, StepType, StepStatus, ExecutionStep, AIResponse,
+    ChatFeedItem, FeedItemType, generate_id
 )
-from services.database import SessionRepository
+from services.database import SessionRepository, ChatFeedItemRepository
+from services.conversation import ConversationContextCache
 from ui.styles import (
     STYLE_SHEET, BG_CARD, BG_CARD_HOVER,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_SECTION, RECORDING_COLOR, ACCENT
 )
 from ui.threads import QueryExecutionThread
+from ui.widgets.chat_feed import ChatFeedWidget
 
 if TYPE_CHECKING:
     from menubar.app import MenuBarApp
@@ -78,15 +81,14 @@ class LiveView(QWidget):
         self._active_brain: Optional[Brain] = None
         self._session: Optional[Session] = None
         self._session_repo = SessionRepository(app.db)
-        self._query_thread: Optional[QueryExecutionThread] = None
+        self._feed_repo = ChatFeedItemRepository(app.db)
+        self._conversation_cache = ConversationContextCache()
+        self._active_threads: dict[str, QueryExecutionThread] = {}
+        self._answer_feed_ids: dict[str, str] = {}
         self._question_rows: list[LiveQuestionRow] = []
         self._active_question_id: Optional[str] = None
         self._final_transcripts: list[TranscriptEntry] = []
         self._partial_entry: Optional[TranscriptEntry] = None
-        self._answer_history: list[tuple[str, str]] = []
-        self._current_query_text: Optional[str] = None
-        self._current_answer_text = ''
-        self._history_visible = False
 
         self.setStyleSheet(STYLE_SHEET)
         self._setup_ui()
@@ -100,7 +102,8 @@ class LiveView(QWidget):
         layout.addLayout(self._build_header())
         layout.addWidget(self._build_transcript_area())
         layout.addWidget(self._build_questions_area())
-        layout.addWidget(self._build_answer_area(), 1)
+        self._chat_feed = ChatFeedWidget()
+        layout.addWidget(self._chat_feed, 1)
         layout.addLayout(self._build_input_area())
 
     def _build_header(self) -> QHBoxLayout:
@@ -241,56 +244,6 @@ class LiveView(QWidget):
 
         return container
 
-    def _build_answer_area(self) -> QWidget:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-
-        header_row = QHBoxLayout()
-        header_row.setSpacing(8)
-
-        label = QLabel('LIVEBRAIN SAYS')
-        label.setObjectName('sectionLabel')
-        header_row.addWidget(label)
-
-        self._history_btn = QPushButton()
-        self._history_btn.setObjectName('iconBtn')
-        self._history_btn.setVisible(False)
-        self._history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._history_btn.clicked.connect(self._toggle_history)
-        header_row.addWidget(self._history_btn)
-
-        header_row.addStretch()
-        layout.addLayout(header_row)
-
-        self._answer_status = QLabel('')
-        self._answer_status.setStyleSheet(f'color: {TEXT_SECTION}; font-size: 11px; font-style: italic;')
-        layout.addWidget(self._answer_status)
-
-        self._answer_text = QTextEdit()
-        self._answer_text.setObjectName('responseBox')
-        self._answer_text.setReadOnly(True)
-        self._answer_text.setPlaceholderText('Click a question or start recording')
-        self._answer_text.setMinimumHeight(80)
-        layout.addWidget(self._answer_text, 1)
-
-        self._history_scroll = QScrollArea()
-        self._history_scroll.setWidgetResizable(True)
-        self._history_scroll.setVisible(False)
-        self._history_scroll.setMaximumHeight(200)
-        self._history_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        self._history_widget = QWidget()
-        self._history_layout = QVBoxLayout(self._history_widget)
-        self._history_layout.setContentsMargins(0, 0, 0, 0)
-        self._history_layout.setSpacing(8)
-        self._history_layout.addStretch()
-        self._history_scroll.setWidget(self._history_widget)
-        layout.addWidget(self._history_scroll)
-
-        return container
-
     def _build_input_area(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(8)
@@ -310,8 +263,6 @@ class LiveView(QWidget):
 
         return row
 
-    # -- LB-032: Brain dropdown --
-
     def refresh_brains(self):
         self._brain_combo.blockSignals(True)
         self._brain_combo.clear()
@@ -323,6 +274,7 @@ class LiveView(QWidget):
             self._brain_combo.setCurrentIndex(0)
             self._start_new_session()
             self.load_questions(brains[0].id)
+            self._load_session_feed()
         self._brain_combo.blockSignals(False)
 
     def set_active_brain(self, brain_id: str):
@@ -336,8 +288,10 @@ class LiveView(QWidget):
             return
         brain_id = self._brain_combo.itemData(index)
         self._active_brain = self.app.brain_repo.get(brain_id)
+        self._cleanup_threads()
         self._start_new_session()
         self.load_questions(brain_id)
+        self._load_session_feed()
 
     def _start_new_session(self):
         if not self._active_brain:
@@ -350,7 +304,23 @@ class LiveView(QWidget):
         )
         self._session_repo.create(self._session)
 
-    # -- LB-033: Transcript indicator --
+    def _load_session_feed(self):
+        if not self._active_brain:
+            self._chat_feed.clear_feed()
+            return
+        sessions = self._session_repo.get_recent_for_brain(self._active_brain.id, limit=2)
+        prior = [s for s in sessions if s.id != (self._session.id if self._session else None)]
+        if prior:
+            items = self._feed_repo.get_by_session(prior[0].id)
+            self._chat_feed.load_from_items(items)
+        else:
+            self._chat_feed.clear_feed()
+
+    def _cleanup_threads(self):
+        for thread in self._active_threads.values():
+            thread.quit()
+            thread.wait(2000)
+        self._active_threads.clear()
 
     def _toggle_recording(self):
         if self.app.audio_service.is_recording():
@@ -391,8 +361,6 @@ class LiveView(QWidget):
             last = '...' + last[-57:]
         self._listening_text.setText(last)
 
-    # -- LB-034: Questions list --
-
     def load_questions(self, brain_id: str):
         while self._questions_layout.count() > 1:
             item = self._questions_layout.takeAt(0)
@@ -416,8 +384,6 @@ class LiveView(QWidget):
         for row in self._question_rows:
             row.set_active(row.question.id == question_id)
 
-    # -- LB-035 & LB-037: Query execution --
-
     def _send_freeform(self):
         text = self._input.text().strip()
         if not text:
@@ -428,25 +394,53 @@ class LiveView(QWidget):
 
     def _execute_query(self, query_text: str, query_type: QueryType, question_id: str = None):
         brain = self._active_brain
-        if not brain:
+        if not brain or not self._session:
             return
 
         session_id = self._session.id
-
-        if self._current_query_text and self._current_answer_text:
-            self._answer_history.append((self._current_query_text, self._current_answer_text))
-            self._update_history_btn()
-
-        self._current_query_text = query_text
-        self._current_answer_text = ''
-        self._answer_text.clear()
-        self._answer_status.setText('LiveBrain is working...')
+        thread_id = generate_id()
 
         transcript = self._final_transcripts.copy()
         if self._partial_entry:
             transcript.append(self._partial_entry)
 
-        self._query_thread = QueryExecutionThread(
+        if transcript:
+            pos = self._feed_repo.get_next_position(session_id)
+            transcript_text = '\n'.join(e.text for e in transcript[-5:])
+            self._feed_repo.create(ChatFeedItem(
+                session_id=session_id,
+                item_type=FeedItemType.TRANSCRIPT,
+                content=transcript_text,
+                position=pos
+            ))
+            self._chat_feed.add_transcript_divider('transcript', transcript_text)
+
+        pos = self._feed_repo.get_next_position(session_id)
+        self._feed_repo.create(ChatFeedItem(
+            session_id=session_id,
+            item_type=FeedItemType.QUESTION,
+            content=query_text,
+            position=pos
+        ))
+        self._chat_feed.add_question(query_text)
+
+        pos = self._feed_repo.get_next_position(session_id)
+        answer_item = ChatFeedItem(
+            session_id=session_id,
+            item_type=FeedItemType.ANSWER,
+            content='',
+            position=pos,
+            thread_id=thread_id
+        )
+        self._feed_repo.create(answer_item)
+        self._answer_feed_ids[thread_id] = answer_item.id
+        self._chat_feed.add_answer(thread_id)
+
+        conversation = self._conversation_cache.get(session_id, brain.id)
+        conversation.add_transcript_entries(transcript)
+        snap = conversation.snapshot()
+
+        thread = QueryExecutionThread(
             db=self.app.db,
             embedder=self.app.embedder,
             session_id=session_id,
@@ -454,68 +448,36 @@ class LiveView(QWidget):
             query_text=query_text,
             transcript=transcript,
             query_type=query_type,
-            question_id=question_id
+            question_id=question_id,
+            thread_id=thread_id,
+            conversation_snapshot=snap
         )
-        self._query_thread.step_update.connect(self._on_step_update)
-        self._query_thread.delta.connect(self._on_delta)
-        self._query_thread.complete.connect(self._on_complete)
-        self._query_thread.start()
+        thread.step_update.connect(self._on_step_update)
+        thread.delta.connect(self._on_delta)
+        thread.complete.connect(self._on_complete)
+        thread.finished.connect(lambda tid=thread_id: self._on_thread_finished(tid))
+        self._active_threads[thread_id] = thread
+        thread.start()
 
-    def _on_step_update(self, step: ExecutionStep):
+    def _on_step_update(self, thread_id: str, step: ExecutionStep):
         if step.status == StepStatus.COMPLETED:
+            self._chat_feed.remove_status(thread_id)
             return
         labels = {
             StepType.LISTENING: 'Listening to the conversation',
             StepType.SEARCHING_FILES: 'Looking through your files',
             StepType.GENERATING: 'Thinking...',
         }
-        self._answer_status.setText(labels.get(step.step_type, 'LiveBrain is working...'))
+        self._chat_feed.update_status(thread_id, labels.get(step.step_type, 'Working...'))
 
-    def _on_delta(self, text: str):
-        self._current_answer_text += text
-        self._answer_text.insertPlainText(text)
+    def _on_delta(self, thread_id: str, text: str):
+        self._chat_feed.append_answer_delta(thread_id, text)
 
-    def _on_complete(self, response: AIResponse):
-        self._answer_status.setText('')
+    def _on_complete(self, thread_id: str, response: AIResponse):
+        self._chat_feed.remove_status(thread_id)
+        self._chat_feed.set_answer_complete(thread_id)
+        if thread_id in self._answer_feed_ids:
+            self._feed_repo.update_content(self._answer_feed_ids[thread_id], response.text)
 
-    # -- LB-036: Previous answers --
-
-    def _update_history_btn(self):
-        count = len(self._answer_history)
-        if count > 0:
-            self._history_btn.setVisible(True)
-            label = f'Previous ({count})'
-            self._history_btn.setText(label)
-            self._history_btn.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 11px;')
-            self._history_btn.setFixedSize(self._history_btn.sizeHint())
-
-    def _toggle_history(self):
-        self._history_visible = not self._history_visible
-        self._history_scroll.setVisible(self._history_visible)
-        if self._history_visible:
-            self._render_history()
-
-    def _render_history(self):
-        while self._history_layout.count() > 1:
-            item = self._history_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        for query_text, answer_text in reversed(self._answer_history):
-            card = QFrame()
-            card.setStyleSheet(f'background-color: {BG_CARD}; border-radius: 6px; padding: 8px;')
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(8, 6, 8, 6)
-            card_layout.setSpacing(4)
-
-            q_label = QLabel(query_text)
-            q_label.setStyleSheet(f'color: {TEXT_PRIMARY}; font-weight: 600; font-size: 12px;')
-            q_label.setWordWrap(True)
-            card_layout.addWidget(q_label)
-
-            a_label = QLabel(answer_text)
-            a_label.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px;')
-            a_label.setWordWrap(True)
-            card_layout.addWidget(a_label)
-
-            self._history_layout.insertWidget(self._history_layout.count() - 1, card)
+    def _on_thread_finished(self, thread_id: str):
+        self._active_threads.pop(thread_id, None)
