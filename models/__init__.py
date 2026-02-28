@@ -57,55 +57,6 @@ class StepStatus(Enum):
     FAILED = 'failed'
 
 
-class ToolType(Enum):
-    SEARCH_FILES = 'search_files'        # RAG - custom, client-side execution
-    WEB_SEARCH = 'web_search'            # Built-in, server-side
-    CODE_INTERPRETER = 'code_interpreter'  # Built-in, server-side
-
-
-# =============================================================================
-# Configuration Models
-# =============================================================================
-
-@dataclass
-class ModelConfig:
-    model: str
-    temperature: float = 0.7
-    max_tokens: Optional[int] = None
-    top_p: Optional[float] = None
-    presence_penalty: Optional[float] = None
-    frequency_penalty: Optional[float] = None
-    extra_params: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        result = {"model": self.model, "temperature": self.temperature}
-        if self.max_tokens is not None:
-            result["max_tokens"] = self.max_tokens
-        if self.top_p is not None:
-            result["top_p"] = self.top_p
-        if self.presence_penalty is not None:
-            result["presence_penalty"] = self.presence_penalty
-        if self.frequency_penalty is not None:
-            result["frequency_penalty"] = self.frequency_penalty
-        result.update(self.extra_params)
-        return result
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'ModelConfig':
-        known_keys = {"model", "temperature", "max_tokens", "top_p",
-                      "presence_penalty", "frequency_penalty"}
-        extra = {k: v for k, v in data.items() if k not in known_keys}
-        return cls(
-            model=data.get('model', 'gpt-5-chat-latest'),
-            temperature=data.get("temperature", 0.7),
-            max_tokens=data.get("max_tokens"),
-            top_p=data.get("top_p"),
-            presence_penalty=data.get("presence_penalty"),
-            frequency_penalty=data.get("frequency_penalty"),
-            extra_params=extra
-        )
-
-
 # =============================================================================
 # Core Entities
 # =============================================================================
@@ -115,26 +66,10 @@ class Brain:
     id: str = field(default_factory=generate_id)
     name: str = ''
     description: str = ''
-    default_model_config: ModelConfig = field(default_factory=lambda: ModelConfig(model='gpt-5-chat-latest'))
+    template_type: str | None = None
+    system_prompt: str = ''
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
-
-
-@dataclass
-class BrainTool:
-    id: str = field(default_factory=generate_id)
-    brain_id: str = ''
-    tool_type: ToolType = ToolType.SEARCH_FILES
-    name: str = ''
-    description: str = ''
-    config: dict[str, Any] = field(default_factory=dict)
-    enabled: bool = True
-    position: int = 0
-    created_at: datetime = field(default_factory=now)
-
-    @property
-    def is_builtin(self) -> bool:
-        return self.tool_type in (ToolType.WEB_SEARCH, ToolType.CODE_INTERPRETER)
 
 
 @dataclass
@@ -143,7 +78,6 @@ class Question:
     brain_id: str = ''
     text: str = ''
     position: int = 0
-    model_config_override: Optional[ModelConfig] = None
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
 
@@ -268,6 +202,6 @@ class UserSettings:
     default_input_device: Optional[str] = None
     default_output_device: Optional[str] = None
     default_brain_id: Optional[str] = None
-    preferred_model: str = 'gpt-5-chat-latest'
     data_directory: Optional[str] = None
     max_session_storage_days: int = 30
+    onboarding_complete: bool = False

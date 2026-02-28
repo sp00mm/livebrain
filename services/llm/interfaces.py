@@ -2,12 +2,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Callable, Generator, Optional
 
-from models import ModelConfig
-
 
 @dataclass
 class Message:
-    role: str  # 'user', 'assistant', 'system'
+    role: str
     content: str
 
 
@@ -19,18 +17,18 @@ class LLMResponse:
     tokens_output: int = 0
 
 
-StreamCallback = Callable[[str, bool], None]  # (delta, is_final)
+StreamCallback = Callable[[str, bool], None]
 
 
 class LLMProvider(ABC):
     @abstractmethod
-    def complete(self, messages: list[Message], config: ModelConfig,
+    def complete(self, messages: list[Message], model: str,
                  system_prompt: Optional[str] = None,
                  tools: Optional[list[dict]] = None) -> LLMResponse:
         pass
 
     @abstractmethod
-    def stream(self, messages: list[Message], config: ModelConfig,
+    def stream(self, messages: list[Message], model: str,
                system_prompt: Optional[str] = None,
                on_delta: Optional[StreamCallback] = None,
                tools: Optional[list[dict]] = None) -> Generator[str, None, LLMResponse]:

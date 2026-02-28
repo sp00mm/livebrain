@@ -8,10 +8,10 @@ from AppKit import NSApp
 
 from services.embedder import Embedder
 from services.scanner import FileScanner
-from services.database import Database, RAGService, UserSettingsRepository, BrainRepository, BrainToolRepository, QuestionRepository, ResourceRepository
+from services.database import Database, RAGService, UserSettingsRepository, BrainRepository, QuestionRepository, ResourceRepository
 from services.updater import Updater
 from services.audio_service import AudioService
-from models import Brain, BrainTool, ToolType
+from models import Brain
 
 from .status_bar import StatusBarController
 from .hotkeys import GlobalHotkeyManager
@@ -54,19 +54,6 @@ class MenuBarApp:
                 self._default_brain = brains[0]
             else:
                 self._default_brain = self.brain_repo.create(Brain(name='Default'))
-            self._ensure_brain_has_tools(self._default_brain)
-
-    def _ensure_brain_has_tools(self, brain: Brain):
-        tool_repo = BrainToolRepository(self.db)
-        existing = tool_repo.get_by_brain(brain.id)
-        if existing:
-            return
-        tool_repo.create(BrainTool(
-            brain_id=brain.id,
-            tool_type=ToolType.SEARCH_FILES,
-            name='Search files',
-            description='Search through linked files and folders'
-        ))
 
     def _init_ui(self):
         self._signals = RecordingSignals()

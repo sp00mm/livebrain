@@ -4,60 +4,57 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models import (
-    Brain, BrainTool, Question, Resource, DocumentChunk, Session,
+    Brain, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    ModelConfig, ToolType,
     FileReference, SpeakerType, QueryType, ResourceType,
     IndexStatus, StepType, StepStatus
 )
 from services.database import (
-    BrainRepository, BrainToolRepository, QuestionRepository, ResourceRepository,
+    BrainRepository, QuestionRepository, ResourceRepository,
     DocumentChunkRepository, SessionRepository, TranscriptEntryRepository,
     InteractionRepository, AIResponseRepository, ExecutionStepRepository,
-    MCPServerRepository, MCPServer, MCPStatus, UserSettingsRepository, RAGService
+    UserSettingsRepository, RAGService
 )
 
 
 class TestBrainRepository:
-    """Tests for Brain CRUD operations."""
 
     def test_create_brain(self, db):
         repo = BrainRepository(db)
         brain = Brain(
-            name="Interview Assistant",
-            description="Helping me interview candidates",
-            default_model_config=ModelConfig(model="gpt-4o", temperature=0.7)
+            name='Interview Assistant',
+            description='Helping me interview candidates'
         )
 
         created = repo.create(brain)
 
         assert created.id == brain.id
-        assert created.name == "Interview Assistant"
-        assert created.description == "Helping me interview candidates"
+        assert created.name == 'Interview Assistant'
+        assert created.description == 'Helping me interview candidates'
 
     def test_get_brain(self, db):
         repo = BrainRepository(db)
-        brain = Brain(name="Test Brain")
+        brain = Brain(name='Test Brain')
         repo.create(brain)
 
         fetched = repo.get(brain.id)
 
         assert fetched is not None
         assert fetched.id == brain.id
-        assert fetched.name == "Test Brain"
+        assert fetched.name == 'Test Brain'
 
     def test_get_nonexistent_brain(self, db):
         repo = BrainRepository(db)
 
-        fetched = repo.get("nonexistent-id")
+        fetched = repo.get('nonexistent-id')
 
         assert fetched is None
 
     def test_get_all_brains(self, db):
         repo = BrainRepository(db)
-        repo.create(Brain(name="Brain 1"))
-        repo.create(Brain(name="Brain 2"))
-        repo.create(Brain(name="Brain 3"))
+        repo.create(Brain(name='Brain 1'))
+        repo.create(Brain(name='Brain 2'))
+        repo.create(Brain(name='Brain 3'))
 
         brains = repo.get_all()
 
@@ -65,216 +62,93 @@ class TestBrainRepository:
 
     def test_update_brain(self, db):
         repo = BrainRepository(db)
-        brain = Brain(name="Original Name")
+        brain = Brain(name='Original Name')
         repo.create(brain)
 
-        brain.name = "Updated Name"
-        brain.description = "New description"
+        brain.name = 'Updated Name'
+        brain.description = 'New description'
         repo.update(brain)
 
         fetched = repo.get(brain.id)
-        assert fetched.name == "Updated Name"
-        assert fetched.description == "New description"
+        assert fetched.name == 'Updated Name'
+        assert fetched.description == 'New description'
 
     def test_delete_brain(self, db):
         repo = BrainRepository(db)
-        brain = Brain(name="To Delete")
+        brain = Brain(name='To Delete')
         repo.create(brain)
 
         repo.delete(brain.id)
 
         assert repo.get(brain.id) is None
 
-    def test_brain_model_config_persistence(self, db):
+    def test_brain_template_fields(self, db):
         repo = BrainRepository(db)
-        config = ModelConfig(
-            model="claude-3-sonnet",
-            temperature=0.5,
-            max_tokens=1000,
-            top_p=0.9,
-            extra_params={"custom": "value"}
+        brain = Brain(
+            name='Interview Brain',
+            template_type='interview',
+            system_prompt='You are an interview helper.'
         )
-        brain = Brain(name="Config Test", default_model_config=config)
         repo.create(brain)
 
         fetched = repo.get(brain.id)
+        assert fetched.template_type == 'interview'
+        assert fetched.system_prompt == 'You are an interview helper.'
 
-        assert fetched.default_model_config.model == "claude-3-sonnet"
-        assert fetched.default_model_config.temperature == 0.5
-        assert fetched.default_model_config.max_tokens == 1000
-        assert fetched.default_model_config.top_p == 0.9
-        assert fetched.default_model_config.extra_params == {"custom": "value"}
+    def test_brain_template_fields_update(self, db):
+        repo = BrainRepository(db)
+        brain = Brain(name='Test')
+        repo.create(brain)
 
-class TestBrainToolRepository:
-    def test_create_tool(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name='Test Brain'))
+        brain.template_type = 'standup'
+        brain.system_prompt = 'Daily standup helper'
+        repo.update(brain)
 
-        tool_repo = BrainToolRepository(db)
-        tool = BrainTool(
-            brain_id=brain.id,
-            tool_type=ToolType.SEARCH_FILES,
-            name='Search Documents',
-            description='Search through linked files'
-        )
-        created = tool_repo.create(tool)
-
-        assert created.id == tool.id
-        assert created.brain_id == brain.id
-        assert created.tool_type == ToolType.SEARCH_FILES
-        assert created.name == 'Search Documents'
-
-    def test_get_by_brain(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name='Test Brain'))
-
-        tool_repo = BrainToolRepository(db)
-        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search', position=0))
-        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.WEB_SEARCH, name='Web', position=1))
-
-        tools = tool_repo.get_by_brain(brain.id)
-        assert len(tools) == 2
-        assert tools[0].tool_type == ToolType.SEARCH_FILES
-        assert tools[1].tool_type == ToolType.WEB_SEARCH
-
-    def test_get_enabled_by_brain(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name='Test Brain'))
-
-        tool_repo = BrainToolRepository(db)
-        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search', enabled=True))
-        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.WEB_SEARCH, name='Web', enabled=False))
-
-        enabled = tool_repo.get_enabled_by_brain(brain.id)
-        assert len(enabled) == 1
-        assert enabled[0].tool_type == ToolType.SEARCH_FILES
-
-    def test_update_tool(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name='Test Brain'))
-
-        tool_repo = BrainToolRepository(db)
-        tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search'))
-
-        tool.name = 'Updated Search'
-        tool.enabled = False
-        tool_repo.update(tool)
-
-        fetched = tool_repo.get(tool.id)
-        assert fetched.name == 'Updated Search'
-        assert fetched.enabled is False
-
-    def test_delete_tool(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name='Test Brain'))
-
-        tool_repo = BrainToolRepository(db)
-        tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search'))
-
-        tool_repo.delete(tool.id)
-        assert tool_repo.get(tool.id) is None
-
-    def test_cascade_delete_on_brain(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name='Test Brain'))
-
-        tool_repo = BrainToolRepository(db)
-        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search'))
-
-        brain_repo.delete(brain.id)
-        tools = tool_repo.get_by_brain(brain.id)
-        assert len(tools) == 0
-
-    def test_tool_config_persistence(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name='Test Brain'))
-
-        tool_repo = BrainToolRepository(db)
-        tool = BrainTool(
-            brain_id=brain.id,
-            tool_type=ToolType.SEARCH_FILES,
-            name='Search',
-            config={'resource_ids': ['res-1', 'res-2']}
-        )
-        tool_repo.create(tool)
-
-        fetched = tool_repo.get(tool.id)
-        assert fetched.config == {'resource_ids': ['res-1', 'res-2']}
-
-    def test_tool_is_builtin(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name='Test Brain'))
-
-        tool_repo = BrainToolRepository(db)
-        search_tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search'))
-        web_tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.WEB_SEARCH, name='Web'))
-        code_tool = tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.CODE_INTERPRETER, name='Code'))
-
-        assert search_tool.is_builtin is False
-        assert web_tool.is_builtin is True
-        assert code_tool.is_builtin is True
+        fetched = repo.get(brain.id)
+        assert fetched.template_type == 'standup'
+        assert fetched.system_prompt == 'Daily standup helper'
 
 
 class TestQuestionRepository:
-    """Tests for Question CRUD operations."""
 
     def test_create_question(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         question_repo = QuestionRepository(db)
         question = Question(
             brain_id=brain.id,
-            text="What should I ask next?",
+            text='What should I ask next?',
             position=0
         )
         created = question_repo.create(question)
 
         assert created.id == question.id
         assert created.brain_id == brain.id
-        assert created.text == "What should I ask next?"
+        assert created.text == 'What should I ask next?'
 
     def test_get_questions_by_brain(self, db):
-        brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
-
-        question_repo = QuestionRepository(db)
-        question_repo.create(Question(brain_id=brain.id, text="Q1", position=0))
-        question_repo.create(Question(brain_id=brain.id, text="Q2", position=1))
-        question_repo.create(Question(brain_id=brain.id, text="Q3", position=2))
-
-        questions = question_repo.get_by_brain(brain.id)
-
-        assert len(questions) == 3
-        assert questions[0].text == "Q1"
-        assert questions[1].text == "Q2"
-        assert questions[2].text == "Q3"
-
-    def test_question_with_model_override(self, db):
         brain_repo = BrainRepository(db)
         brain = brain_repo.create(Brain(name='Test Brain'))
 
         question_repo = QuestionRepository(db)
-        question = Question(
-            brain_id=brain.id,
-            text='Detailed question',
-            position=0,
-            model_config_override=ModelConfig(model='gpt-4o', temperature=0.2)
-        )
-        question_repo.create(question)
+        question_repo.create(Question(brain_id=brain.id, text='Q1', position=0))
+        question_repo.create(Question(brain_id=brain.id, text='Q2', position=1))
+        question_repo.create(Question(brain_id=brain.id, text='Q3', position=2))
 
-        fetched = question_repo.get(question.id)
+        questions = question_repo.get_by_brain(brain.id)
 
-        assert fetched.model_config_override is not None
-        assert fetched.model_config_override.model == 'gpt-4o'
-        assert fetched.model_config_override.temperature == 0.2
+        assert len(questions) == 3
+        assert questions[0].text == 'Q1'
+        assert questions[1].text == 'Q2'
+        assert questions[2].text == 'Q3'
 
     def test_cascade_delete_questions(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         question_repo = QuestionRepository(db)
-        question_repo.create(Question(brain_id=brain.id, text="Q1", position=0))
+        question_repo.create(Question(brain_id=brain.id, text='Q1', position=0))
 
         brain_repo.delete(brain.id)
 
@@ -283,39 +157,38 @@ class TestQuestionRepository:
 
 
 class TestResourceRepository:
-    """Tests for Resource CRUD operations."""
 
     def test_create_file_resource(self, db):
         resource_repo = ResourceRepository(db)
         resource = Resource(
             resource_type=ResourceType.FILE,
-            name="Resume.pdf",
-            path="/path/to/Resume.pdf",
+            name='Resume.pdf',
+            path='/path/to/Resume.pdf',
             size_bytes=1024
         )
         created = resource_repo.create(resource)
 
         assert created.resource_type == ResourceType.FILE
-        assert created.name == "Resume.pdf"
-        assert created.path == "/path/to/Resume.pdf"
+        assert created.name == 'Resume.pdf'
+        assert created.path == '/path/to/Resume.pdf'
 
     def test_create_folder_resource(self, db):
         resource_repo = ResourceRepository(db)
         resource = Resource(
             resource_type=ResourceType.FOLDER,
-            name="Company Policies",
-            path="/path/to/policies"
+            name='Company Policies',
+            path='/path/to/policies'
         )
         resource_repo.create(resource)
 
         fetched = resource_repo.get(resource.id)
 
         assert fetched.resource_type == ResourceType.FOLDER
-        assert fetched.path == "/path/to/policies"
+        assert fetched.path == '/path/to/policies'
 
     def test_update_index_status(self, db):
         resource_repo = ResourceRepository(db)
-        resource = Resource(resource_type=ResourceType.FOLDER, name="test", path="/test")
+        resource = Resource(resource_type=ResourceType.FOLDER, name='test', path='/test')
         resource_repo.create(resource)
 
         assert resource_repo.get(resource.id).index_status == IndexStatus.PENDING
@@ -332,24 +205,24 @@ class TestResourceRepository:
 
     def test_update_index_status_failed(self, db):
         resource_repo = ResourceRepository(db)
-        resource = Resource(resource_type=ResourceType.FOLDER, name="test", path="/test")
+        resource = Resource(resource_type=ResourceType.FOLDER, name='test', path='/test')
         resource_repo.create(resource)
 
-        resource_repo.update_index_status(resource.id, IndexStatus.FAILED, error="File not found")
+        resource_repo.update_index_status(resource.id, IndexStatus.FAILED, error='File not found')
 
         fetched = resource_repo.get(resource.id)
         assert fetched.index_status == IndexStatus.FAILED
-        assert fetched.index_error == "File not found"
+        assert fetched.index_error == 'File not found'
 
     def test_link_resource_to_brain(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Docs",
-            path="/docs"
+            name='Docs',
+            path='/docs'
         ))
 
         resource_repo.link_to_brain(resource.id, brain.id)
@@ -360,13 +233,13 @@ class TestResourceRepository:
 
     def test_unlink_resource_from_brain(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Docs",
-            path="/docs"
+            name='Docs',
+            path='/docs'
         ))
 
         resource_repo.link_to_brain(resource.id, brain.id)
@@ -377,21 +250,20 @@ class TestResourceRepository:
 
 
 class TestSessionRepository:
-    """Tests for Session CRUD operations."""
 
     def test_create_session(self, db):
         session_repo = SessionRepository(db)
-        session = Session(name="Interview #1", is_live=True)
+        session = Session(name='Interview #1', is_live=True)
 
         created = session_repo.create(session)
 
-        assert created.name == "Interview #1"
+        assert created.name == 'Interview #1'
         assert created.is_live is True
 
     def test_get_live_session(self, db):
         session_repo = SessionRepository(db)
-        session_repo.create(Session(name="Session 1", is_live=False))
-        live_session = session_repo.create(Session(name="Live Session", is_live=True))
+        session_repo.create(Session(name='Session 1', is_live=False))
+        live_session = session_repo.create(Session(name='Live Session', is_live=True))
 
         found = session_repo.get_live()
 
@@ -400,7 +272,7 @@ class TestSessionRepository:
 
     def test_end_session(self, db):
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test", is_live=True))
+        session = session_repo.create(Session(name='Test', is_live=True))
 
         session_repo.end_session(session.id)
 
@@ -410,10 +282,10 @@ class TestSessionRepository:
 
     def test_session_with_brain(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         session_repo = SessionRepository(db)
-        session = Session(name="Test", current_brain_id=brain.id)
+        session = Session(name='Test', current_brain_id=brain.id)
         session_repo.create(session)
 
         fetched = session_repo.get(session.id)
@@ -421,33 +293,32 @@ class TestSessionRepository:
 
 
 class TestTranscriptEntryRepository:
-    """Tests for TranscriptEntry CRUD operations."""
 
     def test_create_transcript_entry(self, db):
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test"))
+        session = session_repo.create(Session(name='Test'))
 
         transcript_repo = TranscriptEntryRepository(db)
         entry = TranscriptEntry(
             session_id=session.id,
             speaker=SpeakerType.OTHER,
-            text="Can you walk me through that?",
+            text='Can you walk me through that?',
             confidence=0.95
         )
         created = transcript_repo.create(entry)
 
         assert created.speaker == SpeakerType.OTHER
-        assert created.text == "Can you walk me through that?"
+        assert created.text == 'Can you walk me through that?'
         assert created.confidence == 0.95
 
     def test_get_entries_by_session(self, db):
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test"))
+        session = session_repo.create(Session(name='Test'))
 
         transcript_repo = TranscriptEntryRepository(db)
-        transcript_repo.create(TranscriptEntry(session_id=session.id, speaker=SpeakerType.OTHER, text="Hello"))
-        transcript_repo.create(TranscriptEntry(session_id=session.id, speaker=SpeakerType.USER, text="Hi there"))
-        transcript_repo.create(TranscriptEntry(session_id=session.id, speaker=SpeakerType.OTHER, text="How are you?"))
+        transcript_repo.create(TranscriptEntry(session_id=session.id, speaker=SpeakerType.OTHER, text='Hello'))
+        transcript_repo.create(TranscriptEntry(session_id=session.id, speaker=SpeakerType.USER, text='Hi there'))
+        transcript_repo.create(TranscriptEntry(session_id=session.id, speaker=SpeakerType.OTHER, text='How are you?'))
 
         entries = transcript_repo.get_by_session(session.id)
 
@@ -455,14 +326,14 @@ class TestTranscriptEntryRepository:
 
     def test_get_recent_entries(self, db):
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test"))
+        session = session_repo.create(Session(name='Test'))
 
         transcript_repo = TranscriptEntryRepository(db)
         for i in range(10):
             transcript_repo.create(TranscriptEntry(
                 session_id=session.id,
                 speaker=SpeakerType.USER,
-                text=f"Message {i}"
+                text=f'Message {i}'
             ))
 
         recent = transcript_repo.get_recent(session.id, max_lines=5)
@@ -471,36 +342,35 @@ class TestTranscriptEntryRepository:
 
 
 class TestInteractionRepository:
-    """Tests for Interaction CRUD operations."""
 
     def test_create_interaction(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test"))
+        session = session_repo.create(Session(name='Test'))
 
         interaction_repo = InteractionRepository(db)
         interaction = Interaction(
             session_id=session.id,
             brain_id=brain.id,
             query_type=QueryType.FREEFORM,
-            query_text="Summarize this conversation"
+            query_text='Summarize this conversation'
         )
         created = interaction_repo.create(interaction)
 
         assert created.query_type == QueryType.FREEFORM
-        assert created.query_text == "Summarize this conversation"
+        assert created.query_text == 'Summarize this conversation'
 
     def test_interaction_with_preset_question(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         question_repo = QuestionRepository(db)
-        question = question_repo.create(Question(brain_id=brain.id, text="Test Q", position=0))
+        question = question_repo.create(Question(brain_id=brain.id, text='Test Q', position=0))
 
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test"))
+        session = session_repo.create(Session(name='Test'))
 
         interaction_repo = InteractionRepository(db)
         interaction = Interaction(
@@ -518,62 +388,61 @@ class TestInteractionRepository:
 
 
 class TestAIResponseRepository:
-    """Tests for AIResponse CRUD operations."""
 
     def test_create_ai_response(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test"))
+        session = session_repo.create(Session(name='Test'))
 
         interaction_repo = InteractionRepository(db)
         interaction = interaction_repo.create(Interaction(
             session_id=session.id,
             brain_id=brain.id,
             query_type=QueryType.FREEFORM,
-            query_text="Test"
+            query_text='Test'
         ))
 
         response_repo = AIResponseRepository(db)
         response = AIResponse(
             interaction_id=interaction.id,
-            text="Here is my response...",
-            model_used="gpt-4o",
+            text='Here is my response...',
+            model_used='gpt-4o',
             tokens_input=100,
             tokens_output=50,
             latency_ms=500
         )
         created = response_repo.create(response)
 
-        assert created.text == "Here is my response..."
-        assert created.model_used == "gpt-4o"
+        assert created.text == 'Here is my response...'
+        assert created.model_used == 'gpt-4o'
 
     def test_response_with_file_references(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test"))
+        session = session_repo.create(Session(name='Test'))
 
         interaction_repo = InteractionRepository(db)
         interaction = interaction_repo.create(Interaction(
             session_id=session.id,
             brain_id=brain.id,
             query_type=QueryType.FREEFORM,
-            query_text="Find the PTO policy"
+            query_text='Find the PTO policy'
         ))
 
         response_repo = AIResponseRepository(db)
         response = AIResponse(
             interaction_id=interaction.id,
-            text="I found the document.",
-            model_used="gpt-4o",
+            text='I found the document.',
+            model_used='gpt-4o',
             file_references=[
                 FileReference(
-                    resource_id="res-123",
-                    filepath="/docs/PTO_Policy.pdf",
-                    display_name="PTO_Policy.pdf",
+                    resource_id='res-123',
+                    filepath='/docs/PTO_Policy.pdf',
+                    display_name='PTO_Policy.pdf',
                     relevance_score=0.95
                 )
             ]
@@ -582,32 +451,31 @@ class TestAIResponseRepository:
 
         fetched = response_repo.get_by_interaction(interaction.id)
         assert len(fetched.file_references) == 1
-        assert fetched.file_references[0].display_name == "PTO_Policy.pdf"
+        assert fetched.file_references[0].display_name == 'PTO_Policy.pdf'
 
 
 class TestExecutionStepRepository:
-    """Tests for ExecutionStep CRUD operations."""
 
     def test_create_execution_step(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test"))
+        session = session_repo.create(Session(name='Test'))
 
         interaction_repo = InteractionRepository(db)
         interaction = interaction_repo.create(Interaction(
             session_id=session.id,
             brain_id=brain.id,
             query_type=QueryType.FREEFORM,
-            query_text="Test"
+            query_text='Test'
         ))
 
         step_repo = ExecutionStepRepository(db)
         step = ExecutionStep(
             interaction_id=interaction.id,
             step_type=StepType.SEARCHING_FILES,
-            details="Looking through added files"
+            details='Looking through added files'
         )
         created = step_repo.create(step)
 
@@ -616,17 +484,17 @@ class TestExecutionStepRepository:
 
     def test_complete_step(self, db):
         brain_repo = BrainRepository(db)
-        brain = brain_repo.create(Brain(name="Test Brain"))
+        brain = brain_repo.create(Brain(name='Test Brain'))
 
         session_repo = SessionRepository(db)
-        session = session_repo.create(Session(name="Test"))
+        session = session_repo.create(Session(name='Test'))
 
         interaction_repo = InteractionRepository(db)
         interaction = interaction_repo.create(Interaction(
             session_id=session.id,
             brain_id=brain.id,
             query_type=QueryType.FREEFORM,
-            query_text="Test"
+            query_text='Test'
         ))
 
         step_repo = ExecutionStepRepository(db)
@@ -642,106 +510,70 @@ class TestExecutionStepRepository:
         assert fetched.completed_at is not None
 
 
-class TestMCPServerRepository:
-    """Tests for MCPServer CRUD operations."""
-
-    def test_create_mcp_server(self, db):
-        repo = MCPServerRepository(db)
-        server = MCPServer(
-            name="notion",
-            display_name="Notion",
-            server_command="npx @notionhq/mcp-server",
-            capabilities=["search", "read"]
-        )
-        created = repo.create(server)
-
-        assert created.name == "notion"
-        assert created.display_name == "Notion"
-
-    def test_get_by_name(self, db):
-        repo = MCPServerRepository(db)
-        repo.create(MCPServer(name="notion", display_name="Notion", server_command="cmd"))
-
-        fetched = repo.get_by_name("notion")
-
-        assert fetched is not None
-        assert fetched.name == "notion"
-
-    def test_update_status(self, db):
-        repo = MCPServerRepository(db)
-        server = repo.create(MCPServer(name="test", display_name="Test", server_command="cmd"))
-
-        repo.update_status(server.id, MCPStatus.CONNECTED)
-
-        fetched = repo.get(server.id)
-        assert fetched.status == MCPStatus.CONNECTED
-
-
 class TestUserSettingsRepository:
-    """Tests for UserSettings singleton operations."""
 
     def test_get_default_settings(self, db):
         repo = UserSettingsRepository(db)
 
         settings = repo.get()
 
-        assert settings.preferred_model == 'gpt-4o'
+        assert settings.max_session_storage_days == 30
+        assert settings.onboarding_complete is False
 
     def test_update_settings(self, db):
         repo = UserSettingsRepository(db)
 
         settings = repo.get()
-        settings.preferred_model = 'claude-3-sonnet'
         settings.max_session_storage_days = 60
+        settings.onboarding_complete = True
         repo.update(settings)
 
         fetched = repo.get()
-        assert fetched.preferred_model == 'claude-3-sonnet'
         assert fetched.max_session_storage_days == 60
+        assert fetched.onboarding_complete is True
 
 
 class TestDocumentChunkRepository:
-    """Tests for DocumentChunk and vector search operations."""
 
     def test_create_chunk(self, db):
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="test",
-            path="/test"
+            name='test',
+            path='/test'
         ))
 
         chunk_repo = DocumentChunkRepository(db)
         chunk = DocumentChunk(
             resource_id=resource.id,
-            filepath="/path/to/test.txt",
+            filepath='/path/to/test.txt',
             chunk_index=0,
             start_char=0,
             end_char=100,
-            text="This is a test document.",
-            embedding=[0.1] * 768  # Mock embedding
+            text='This is a test document.',
+            embedding=[0.1] * 768
         )
         created = chunk_repo.create(chunk)
 
-        assert created.text == "This is a test document."
+        assert created.text == 'This is a test document.'
 
     def test_get_chunks_by_resource(self, db):
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="test",
-            path="/test"
+            name='test',
+            path='/test'
         ))
 
         chunk_repo = DocumentChunkRepository(db)
         for i in range(3):
             chunk_repo.create(DocumentChunk(
                 resource_id=resource.id,
-                filepath="/path/to/test.txt",
+                filepath='/path/to/test.txt',
                 chunk_index=i,
                 start_char=i * 100,
                 end_char=(i + 1) * 100,
-                text=f"Chunk {i}",
+                text=f'Chunk {i}',
                 embedding=[0.1] * 768
             ))
 
@@ -755,16 +587,16 @@ class TestDocumentChunkRepository:
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="test",
-            path="/test"
+            name='test',
+            path='/test'
         ))
 
         chunk_repo = DocumentChunkRepository(db)
         chunk_repo.create(DocumentChunk(
             resource_id=resource.id,
-            filepath="/path/to/test.txt",
+            filepath='/path/to/test.txt',
             chunk_index=0,
-            text="Test",
+            text='Test',
             embedding=[0.1] * 768
         ))
 
@@ -775,10 +607,8 @@ class TestDocumentChunkRepository:
 
 
 class TestRAGService:
-    """Tests for RAG (Retrieval-Augmented Generation) operations."""
 
     def _mock_embedding(self, text: str) -> list[float]:
-        """Generate deterministic mock embedding based on text hash."""
         import hashlib
         h = int(hashlib.md5(text.encode()).hexdigest(), 16)
         return [(h >> i & 0xFF) / 255.0 for i in range(768)]
@@ -787,15 +617,15 @@ class TestRAGService:
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Vacation Policy",
-            path="/docs"
+            name='Vacation Policy',
+            path='/docs'
         ))
 
         rag = RAGService(db)
         rag.index_text(
             resource_id=resource.id,
-            filepath="/docs/policy.txt",
-            text="This is the company vacation policy. Employees get 20 days PTO.",
+            filepath='/docs/policy.txt',
+            text='This is the company vacation policy. Employees get 20 days PTO.',
             embedding_fn=self._mock_embedding
         )
 
@@ -806,17 +636,16 @@ class TestRAGService:
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Long Doc",
-            path="/docs"
+            name='Long Doc',
+            path='/docs'
         ))
 
-        # Create text that will be split into multiple chunks
-        long_text = "This is sentence one. " * 100
+        long_text = 'This is sentence one. ' * 100
 
         rag = RAGService(db)
         rag.index_text(
             resource_id=resource.id,
-            filepath="/docs/long.txt",
+            filepath='/docs/long.txt',
             text=long_text,
             embedding_fn=self._mock_embedding,
             chunk_size=200,
@@ -830,28 +659,26 @@ class TestRAGService:
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Company Docs",
-            path="/docs"
+            name='Company Docs',
+            path='/docs'
         ))
 
         rag = RAGService(db)
 
-        # Index some documents
         rag.index_text(
             resource_id=resource.id,
-            filepath="/docs/vacation.txt",
-            text="Vacation policy: employees receive 20 days of paid time off per year.",
+            filepath='/docs/vacation.txt',
+            text='Vacation policy: employees receive 20 days of paid time off per year.',
             embedding_fn=self._mock_embedding
         )
         rag.index_text(
             resource_id=resource.id,
-            filepath="/docs/salary.txt",
-            text="Salary information: compensation is reviewed annually in January.",
+            filepath='/docs/salary.txt',
+            text='Salary information: compensation is reviewed annually in January.',
             embedding_fn=self._mock_embedding
         )
 
-        # Search
-        query_embedding = self._mock_embedding("How much PTO do I get?")
+        query_embedding = self._mock_embedding('How much PTO do I get?')
         results = rag.search(query_embedding, resource_ids=[resource.id], limit=5)
 
         assert len(results) == 2
@@ -861,31 +688,31 @@ class TestRAGService:
         resource_repo = ResourceRepository(db)
         resource1 = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Docs 1",
-            path="/docs1"
+            name='Docs 1',
+            path='/docs1'
         ))
         resource2 = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Docs 2",
-            path="/docs2"
+            name='Docs 2',
+            path='/docs2'
         ))
 
         rag = RAGService(db)
 
         rag.index_text(
             resource_id=resource1.id,
-            filepath="/docs1/doc1.txt",
-            text="Document for resource one.",
+            filepath='/docs1/doc1.txt',
+            text='Document for resource one.',
             embedding_fn=self._mock_embedding
         )
         rag.index_text(
             resource_id=resource2.id,
-            filepath="/docs2/doc2.txt",
-            text="Document for resource two.",
+            filepath='/docs2/doc2.txt',
+            text='Document for resource two.',
             embedding_fn=self._mock_embedding
         )
 
-        query_embedding = self._mock_embedding("document")
+        query_embedding = self._mock_embedding('document')
 
         results1 = rag.search(query_embedding, resource_ids=[resource1.id])
         results2 = rag.search(query_embedding, resource_ids=[resource2.id])
@@ -900,37 +727,37 @@ class TestRAGService:
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Policy",
-            path="/docs"
+            name='Policy',
+            path='/docs'
         ))
 
         rag = RAGService(db)
         rag.index_text(
             resource_id=resource.id,
-            filepath="/docs/policy.txt",
-            text="Company policy document with important information.",
+            filepath='/docs/policy.txt',
+            text='Company policy document with important information.',
             embedding_fn=self._mock_embedding
         )
 
-        query_embedding = self._mock_embedding("policy")
+        query_embedding = self._mock_embedding('policy')
         context = rag.get_context(query_embedding, resource_ids=[resource.id])
 
-        assert "[Policy]" in context
-        assert "important information" in context
+        assert '[Policy]' in context
+        assert 'important information' in context
 
     def test_delete_resource(self, db):
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Test",
-            path="/test"
+            name='Test',
+            path='/test'
         ))
 
         rag = RAGService(db)
         rag.index_text(
             resource_id=resource.id,
-            filepath="/test/test.txt",
-            text="Test document content.",
+            filepath='/test/test.txt',
+            text='Test document content.',
             embedding_fn=self._mock_embedding
         )
 
@@ -943,10 +770,9 @@ class TestRAGService:
     def test_chunk_text_sentence_boundaries(self, db):
         rag = RAGService(db)
 
-        text = "First sentence here. Second sentence here. Third sentence here. Fourth sentence."
+        text = 'First sentence here. Second sentence here. Third sentence here. Fourth sentence.'
         chunks = rag._chunk_text(text, size=50, overlap=10)
 
-        # All chunks should have content
         assert len(chunks) >= 2
         for chunk_text, start, end in chunks:
             assert len(chunk_text) > 0
@@ -954,34 +780,30 @@ class TestRAGService:
             assert end > start
 
     def test_vector_similarity_search(self, db):
-        """Test that vector search returns results ordered by similarity."""
         resource_repo = ResourceRepository(db)
         resource = resource_repo.create(Resource(
             resource_type=ResourceType.FOLDER,
-            name="Mixed Docs",
-            path="/docs"
+            name='Mixed Docs',
+            path='/docs'
         ))
 
         rag = RAGService(db)
 
-        # Index documents with distinct content
         rag.index_text(
             resource_id=resource.id,
-            filepath="/docs/python.txt",
-            text="Python is a programming language used for web development and data science.",
+            filepath='/docs/python.txt',
+            text='Python is a programming language used for web development and data science.',
             embedding_fn=self._mock_embedding
         )
         rag.index_text(
             resource_id=resource.id,
-            filepath="/docs/cooking.txt",
-            text="Cooking recipes for delicious pasta and Italian cuisine.",
+            filepath='/docs/cooking.txt',
+            text='Cooking recipes for delicious pasta and Italian cuisine.',
             embedding_fn=self._mock_embedding
         )
 
-        # Search for programming-related content
-        query = self._mock_embedding("programming language")
+        query = self._mock_embedding('programming language')
         results = rag.search(query, resource_ids=[resource.id])
 
         assert len(results) == 2
-        # All results should have similarity scores
         assert all(0 <= r['similarity'] <= 1 for r in results)
