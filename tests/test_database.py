@@ -6,14 +6,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models import (
     Brain, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    FileReference, SpeakerType, QueryType, ResourceType,
-    IndexStatus, StepType, StepStatus
+    FileReference, ChatFeedItem, SpeakerType, QueryType, ResourceType,
+    IndexStatus, StepType, StepStatus, FeedItemType
 )
 from services.database import (
     BrainRepository, QuestionRepository, ResourceRepository,
     DocumentChunkRepository, SessionRepository, TranscriptEntryRepository,
     InteractionRepository, AIResponseRepository, ExecutionStepRepository,
-    UserSettingsRepository, RAGService
+    UserSettingsRepository, ChatFeedItemRepository, RAGService
 )
 
 
@@ -807,3 +807,116 @@ class TestRAGService:
 
         assert len(results) == 2
         assert all(0 <= r['similarity'] <= 1 for r in results)
+
+
+class TestChatFeedItemRepository:
+
+    def test_create_feed_item(self, db):
+        session_repo = SessionRepository(db)
+        session = session_repo.create(Session(name='Test'))
+
+        repo = ChatFeedItemRepository(db)
+        item = ChatFeedItem(
+            session_id=session.id,
+            item_type=FeedItemType.QUESTION,
+            content='What is the PTO policy?',
+            position=0
+        )
+        created = repo.create(item)
+
+        assert created.id == item.id
+        assert created.item_type == FeedItemType.QUESTION
+        assert created.content == 'What is the PTO policy?'
+
+    def test_get_by_session_ordered(self, db):
+        session_repo = SessionRepository(db)
+        session = session_repo.create(Session(name='Test'))
+
+        repo = ChatFeedItemRepository(db)
+        repo.create(ChatFeedItem(session_id=session.id, item_type=FeedItemType.TRANSCRIPT, content='Hello', position=0))
+        repo.create(ChatFeedItem(session_id=session.id, item_type=FeedItemType.QUESTION, content='Q1', position=1))
+        repo.create(ChatFeedItem(session_id=session.id, item_type=FeedItemType.ANSWER, content='A1', position=2))
+
+        items = repo.get_by_session(session.id)
+
+        assert len(items) == 3
+        assert items[0].item_type == FeedItemType.TRANSCRIPT
+        assert items[1].item_type == FeedItemType.QUESTION
+        assert items[2].item_type == FeedItemType.ANSWER
+        assert items[0].position < items[1].position < items[2].position
+
+    def test_update_content(self, db):
+        session_repo = SessionRepository(db)
+        session = session_repo.create(Session(name='Test'))
+
+        repo = ChatFeedItemRepository(db)
+        item = repo.create(ChatFeedItem(
+            session_id=session.id,
+            item_type=FeedItemType.ANSWER,
+            content='Partial answer...',
+            position=0
+        ))
+
+        repo.update_content(item.id, 'Complete answer with all the details.')
+
+        items = repo.get_by_session(session.id)
+        assert items[0].content == 'Complete answer with all the details.'
+
+    def test_get_next_position(self, db):
+        session_repo = SessionRepository(db)
+        session = session_repo.create(Session(name='Test'))
+
+        repo = ChatFeedItemRepository(db)
+        assert repo.get_next_position(session.id) == 0
+
+        repo.create(ChatFeedItem(session_id=session.id, item_type=FeedItemType.QUESTION, content='Q', position=0))
+        assert repo.get_next_position(session.id) == 1
+
+        repo.create(ChatFeedItem(session_id=session.id, item_type=FeedItemType.ANSWER, content='A', position=1))
+        assert repo.get_next_position(session.id) == 2
+
+    def test_feed_item_with_thread_id(self, db):
+        session_repo = SessionRepository(db)
+        session = session_repo.create(Session(name='Test'))
+
+        repo = ChatFeedItemRepository(db)
+        item = repo.create(ChatFeedItem(
+            session_id=session.id,
+            item_type=FeedItemType.ANSWER,
+            content='Streaming...',
+            position=0,
+            thread_id='thread-abc-123'
+        ))
+
+        items = repo.get_by_session(session.id)
+        assert items[0].thread_id == 'thread-abc-123'
+
+
+class TestSessionRepositoryBrain:
+
+    def test_get_recent_for_brain(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+        other_brain = brain_repo.create(Brain(name='Other Brain'))
+
+        session_repo = SessionRepository(db)
+        session_repo.create(Session(name='S1', current_brain_id=brain.id))
+        session_repo.create(Session(name='S2', current_brain_id=brain.id))
+        session_repo.create(Session(name='Other', current_brain_id=other_brain.id))
+
+        sessions = session_repo.get_recent_for_brain(brain.id)
+
+        assert len(sessions) == 2
+        assert all(s.current_brain_id == brain.id for s in sessions)
+
+    def test_get_recent_for_brain_limit(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        session_repo = SessionRepository(db)
+        for i in range(5):
+            session_repo.create(Session(name=f'S{i}', current_brain_id=brain.id))
+
+        sessions = session_repo.get_recent_for_brain(brain.id, limit=3)
+
+        assert len(sessions) == 3

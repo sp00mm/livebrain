@@ -16,8 +16,8 @@ import libsql
 from models import (
     Brain, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    UserSettings, FileReference, SpeakerType, QueryType,
-    ResourceType, IndexStatus, StepType, StepStatus
+    UserSettings, FileReference, ChatFeedItem, SpeakerType, QueryType,
+    ResourceType, IndexStatus, StepType, StepStatus, FeedItemType
 )
 
 
@@ -489,6 +489,13 @@ class SessionRepository:
         """, [_dt_to_str(datetime.now(timezone.utc).replace(tzinfo=None)), session_id])
         self.conn.commit()
 
+    def get_recent_for_brain(self, brain_id: str, limit: int = 20) -> list[Session]:
+        cursor = self.conn.execute(
+            'SELECT * FROM sessions WHERE current_brain_id = ? ORDER BY created_at DESC LIMIT ?',
+            [brain_id, limit]
+        )
+        return [self._row_to_session(row) for row in cursor.fetchall()]
+
     def delete(self, session_id: str) -> bool:
         self.conn.execute("DELETE FROM sessions WHERE id = ?", [session_id])
         self.conn.commit()
@@ -748,6 +755,69 @@ class ExecutionStepRepository:
             details=row[4],
             started_at=_str_to_dt(row[5]),
             completed_at=_str_to_dt(row[6])
+        )
+
+
+# =============================================================================
+# Repository: ChatFeedItems
+# =============================================================================
+
+class ChatFeedItemRepository:
+    def __init__(self, db: Database):
+        self.db = db
+        self.conn = db.conn
+
+    def create(self, item: ChatFeedItem) -> ChatFeedItem:
+        self.conn.execute('''
+            INSERT INTO chat_feed_items (id, session_id, item_type, content,
+                                         metadata_json, position, thread_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [
+            item.id,
+            item.session_id,
+            item.item_type.value,
+            item.content,
+            item.metadata_json,
+            item.position,
+            item.thread_id,
+            _dt_to_str(item.created_at)
+        ])
+        self.conn.commit()
+        return item
+
+    def get_by_session(self, session_id: str) -> list[ChatFeedItem]:
+        cursor = self.conn.execute(
+            'SELECT * FROM chat_feed_items WHERE session_id = ? ORDER BY position',
+            [session_id]
+        )
+        return [self._row_to_item(row) for row in cursor.fetchall()]
+
+    def update_content(self, item_id: str, content: str) -> None:
+        self.conn.execute(
+            'UPDATE chat_feed_items SET content = ? WHERE id = ?',
+            [content, item_id]
+        )
+        self.conn.commit()
+
+    def get_next_position(self, session_id: str) -> int:
+        cursor = self.conn.execute(
+            'SELECT MAX(position) FROM chat_feed_items WHERE session_id = ?',
+            [session_id]
+        )
+        row = cursor.fetchone()
+        max_pos = row[0]
+        return 0 if max_pos is None else max_pos + 1
+
+    def _row_to_item(self, row) -> ChatFeedItem:
+        return ChatFeedItem(
+            id=row[0],
+            session_id=row[1],
+            item_type=FeedItemType(row[2]),
+            content=row[3],
+            metadata_json=row[4] or '{}',
+            position=row[5],
+            thread_id=row[6],
+            created_at=_str_to_dt(row[7])
         )
 
 
