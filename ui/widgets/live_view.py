@@ -14,7 +14,7 @@ from models import (
     QueryType, StepType, StepStatus, ExecutionStep, AIResponse
 )
 from ui.styles import (
-    STYLE_SHEET, BG_CARD, BG_CARD_HOVER, BG_PRIMARY, BG_RESPONSE,
+    STYLE_SHEET, BG_CARD, BG_CARD_HOVER,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_SECTION, RECORDING_COLOR, ACCENT
 )
 from ui.threads import QueryExecutionThread

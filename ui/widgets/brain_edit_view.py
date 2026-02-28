@@ -12,7 +12,7 @@ import qtawesome as qta
 from models import Brain, Question, Resource, ResourceType, IndexStatus
 from services.database import Database, BrainRepository, QuestionRepository, ResourceRepository
 from ui.styles import (
-    STYLE_SHEET, BG_CARD, BG_CARD_HOVER, TEXT_PRIMARY, TEXT_SECONDARY,
+    STYLE_SHEET, TEXT_PRIMARY,
     TEXT_DIM, ACCENT_BG, ACCENT_BORDER, DANGER_BG, DANGER_BORDER
 )
 from ui.threads import IndexThread, EstimateThread

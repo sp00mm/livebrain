@@ -1,7 +1,6 @@
 import os
 from typing import Optional
 
-from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer, QObject, Signal
 
 from AppKit import NSApp

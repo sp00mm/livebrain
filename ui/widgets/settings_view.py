@@ -7,8 +7,7 @@ from PySide6.QtCore import Signal
 from services.database import Database, UserSettingsRepository
 from services.secrets import secrets
 from ui.styles import (
-    STYLE_SHEET, BG_PRIMARY, BG_BUTTON, BORDER_COLOR,
-    TEXT_PRIMARY, TEXT_SECONDARY, ACCENT, FONT_SIZE
+    STYLE_SHEET, TEXT_PRIMARY, TEXT_SECONDARY, ACCENT, FONT_SIZE
 )
 
 
