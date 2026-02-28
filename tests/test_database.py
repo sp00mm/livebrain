@@ -6,15 +6,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models import (
     Brain, BrainTool, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    MCPServer, ModelConfig, ToolType,
+    ModelConfig, ToolType,
     FileReference, SpeakerType, QueryType, ResourceType,
-    IndexStatus, StepType, StepStatus, MCPStatus
+    IndexStatus, StepType, StepStatus
 )
 from services.database import (
     BrainRepository, BrainToolRepository, QuestionRepository, ResourceRepository,
     DocumentChunkRepository, SessionRepository, TranscriptEntryRepository,
     InteractionRepository, AIResponseRepository, ExecutionStepRepository,
-    MCPServerRepository, UserSettingsRepository, RAGService
+    MCPServerRepository, MCPServer, MCPStatus, UserSettingsRepository, RAGService
 )
 
 
