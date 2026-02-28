@@ -151,3 +151,16 @@ CREATE TABLE IF NOT EXISTS user_settings (
     FOREIGN KEY (default_brain_id) REFERENCES brains(id)
 );
 INSERT OR IGNORE INTO user_settings (id) VALUES (1);
+
+CREATE TABLE IF NOT EXISTS chat_feed_items (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    item_type TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT DEFAULT '{}',
+    position INTEGER NOT NULL,
+    thread_id TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_feed_items_session ON chat_feed_items(session_id, position);

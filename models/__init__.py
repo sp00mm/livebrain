@@ -57,6 +57,13 @@ class StepStatus(Enum):
     FAILED = 'failed'
 
 
+class FeedItemType(Enum):
+    TRANSCRIPT = 'transcript'
+    QUESTION = 'question'
+    ANSWER = 'answer'
+    STATUS = 'status'
+
+
 # =============================================================================
 # Core Entities
 # =============================================================================
@@ -195,6 +202,18 @@ class ExecutionStep:
     details: Optional[str] = None
     started_at: datetime = field(default_factory=now)
     completed_at: Optional[datetime] = None
+
+
+@dataclass
+class ChatFeedItem:
+    id: str = field(default_factory=generate_id)
+    session_id: str = ''
+    item_type: FeedItemType = FeedItemType.TRANSCRIPT
+    content: str = ''
+    metadata_json: str = '{}'
+    position: int = 0
+    thread_id: Optional[str] = None
+    created_at: datetime = field(default_factory=now)
 
 
 @dataclass

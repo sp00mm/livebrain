@@ -53,6 +53,14 @@ class ConversationContext:
     def get_transcript_ids(self) -> list[str]:
         return [e.id for e in self.transcript_entries]
 
+    def snapshot(self) -> 'ConversationContext':
+        return ConversationContext(
+            session_id=self.session_id,
+            brain_id=self.brain_id,
+            transcript_entries=list(self.transcript_entries),
+            qa_history=list(self.qa_history)
+        )
+
 
 class ConversationContextCache:
     def __init__(self):
