@@ -11,7 +11,7 @@ class DetachedWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('LiveBrain')
-        self.setMinimumSize(400, 520)
+        self.setMinimumSize(480, 580)
         self.setStyleSheet('background-color: #1e1e1e;')
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(8, 8, 8, 8)
@@ -42,7 +42,7 @@ class PopoverWindow(QWidget):
         self._layout.setContentsMargins(8, 8, 8, 8)
         self._layout.addWidget(content_widget)
 
-        self.setFixedSize(400, 520)
+        self.setFixedSize(480, 580)
 
         QApplication.instance().installEventFilter(self)
 

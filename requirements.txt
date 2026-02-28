@@ -12,3 +12,4 @@ pyobjc-framework-Cocoa
 pynput==1.7.6
 openai>=1.68.0
 keyring
+html2text

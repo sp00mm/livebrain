@@ -139,15 +139,6 @@ CREATE TABLE IF NOT EXISTS execution_steps (
 );
 CREATE INDEX IF NOT EXISTS idx_steps_interaction ON execution_steps(interaction_id);
 
-CREATE TABLE IF NOT EXISTS mcp_servers (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    display_name TEXT NOT NULL,
-    server_command TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'disconnected',
-    capabilities_json TEXT
-);
-
 CREATE TABLE IF NOT EXISTS user_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     default_input_device TEXT,
