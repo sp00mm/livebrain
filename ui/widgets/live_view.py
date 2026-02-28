@@ -69,6 +69,7 @@ class LiveView(QWidget):
     navigate_to_picker = Signal()
     navigate_to_brain_edit = Signal(str)
     navigate_to_settings = Signal()
+    pop_out_requested = Signal()
 
     def __init__(self, app: 'MenuBarApp'):
         super().__init__()
@@ -103,10 +104,27 @@ class LiveView(QWidget):
         header = QHBoxLayout()
         header.setSpacing(8)
 
+        self._pop_out_btn = QPushButton()
+        self._pop_out_btn.setObjectName('iconBtn')
+        self._pop_out_btn.setIcon(qta.icon('mdi.open-in-new', color='#888888'))
+        self._pop_out_btn.setFixedSize(24, 24)
+        self._pop_out_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pop_out_btn.setToolTip('Open in window')
+        self._pop_out_btn.clicked.connect(self.pop_out_requested.emit)
+        header.addWidget(self._pop_out_btn)
+
         self._brain_combo = QComboBox()
         self._brain_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._brain_combo.currentIndexChanged.connect(self._on_brain_changed)
         header.addWidget(self._brain_combo, 1)
+
+        edit_btn = QPushButton()
+        edit_btn.setObjectName('iconBtn')
+        edit_btn.setIcon(qta.icon('mdi.pencil', color='#888888'))
+        edit_btn.setFixedSize(24, 24)
+        edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        edit_btn.clicked.connect(self._edit_current_brain)
+        header.addWidget(edit_btn)
 
         add_btn = QPushButton()
         add_btn.setObjectName('iconBtn')
@@ -125,6 +143,18 @@ class LiveView(QWidget):
         header.addWidget(settings_btn)
 
         return header
+
+    def _edit_current_brain(self):
+        if self._active_brain:
+            self.navigate_to_brain_edit.emit(self._active_brain.id)
+
+    def set_detached(self, detached: bool):
+        if detached:
+            self._pop_out_btn.setIcon(qta.icon('mdi.arrow-collapse', color='#888888'))
+            self._pop_out_btn.setToolTip('Back to menu bar')
+        else:
+            self._pop_out_btn.setIcon(qta.icon('mdi.open-in-new', color='#888888'))
+            self._pop_out_btn.setToolTip('Open in window')
 
     def _build_transcript_area(self) -> QWidget:
         self._transcript_container = QWidget()
