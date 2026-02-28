@@ -48,7 +48,6 @@ class IndexStatus(Enum):
 class StepType(Enum):
     LISTENING = 'listening'
     SEARCHING_FILES = 'searching_files'
-    MCP_CALL = 'mcp_call'
     GENERATING = 'generating'
 
 
@@ -56,20 +55,6 @@ class StepStatus(Enum):
     IN_PROGRESS = 'in_progress'
     COMPLETED = 'completed'
     FAILED = 'failed'
-
-
-class MCPStatus(Enum):
-    DISCONNECTED = 'disconnected'
-    CONNECTING = 'connecting'
-    CONNECTED = 'connected'
-    ERROR = 'error'
-
-
-class ToolType(Enum):
-    SEARCH_FILES = 'search_files'        # RAG - custom, client-side execution
-    WEB_SEARCH = 'web_search'            # Built-in, server-side
-    CODE_INTERPRETER = 'code_interpreter'  # Built-in, server-side
-    MCP_SERVER = 'mcp_server'            # Custom, client-side execution
 
 
 # =============================================================================
@@ -81,25 +66,10 @@ class Brain:
     id: str = field(default_factory=generate_id)
     name: str = ''
     description: str = ''
+    template_type: str | None = None
+    system_prompt: str = ''
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
-
-
-@dataclass
-class BrainTool:
-    id: str = field(default_factory=generate_id)
-    brain_id: str = ''
-    tool_type: ToolType = ToolType.SEARCH_FILES
-    name: str = ''
-    description: str = ''
-    config: dict[str, Any] = field(default_factory=dict)
-    enabled: bool = True
-    position: int = 0
-    created_at: datetime = field(default_factory=now)
-
-    @property
-    def is_builtin(self) -> bool:
-        return self.tool_type in (ToolType.WEB_SEARCH, ToolType.CODE_INTERPRETER)
 
 
 @dataclass
@@ -236,21 +206,10 @@ class ExecutionStep:
 
 
 @dataclass
-class MCPServer:
-    """External tool integration via Model Context Protocol."""
-    id: str = field(default_factory=generate_id)
-    name: str = ""               # "notion", "slack"
-    display_name: str = ""       # "Notion"
-    server_command: str = ""     # Command to start server
-    status: MCPStatus = MCPStatus.DISCONNECTED
-    capabilities: list[str] = field(default_factory=list)
-
-
-@dataclass
 class UserSettings:
-    """Global application settings."""
     default_input_device: Optional[str] = None
     default_output_device: Optional[str] = None
     default_brain_id: Optional[str] = None
     data_directory: Optional[str] = None
     max_session_storage_days: int = 30
+    onboarding_complete: bool = False

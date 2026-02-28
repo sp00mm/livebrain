@@ -14,11 +14,10 @@ from typing import Optional
 import libsql
 
 from models import (
-    Brain, BrainTool, Question, Resource, DocumentChunk, Session,
+    Brain, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    MCPServer, UserSettings, ModelConfig, ToolType,
-    FileReference, SpeakerType, QueryType, ResourceType,
-    IndexStatus, StepType, StepStatus, MCPStatus
+    UserSettings, FileReference, SpeakerType, QueryType,
+    ResourceType, IndexStatus, StepType, StepStatus
 )
 
 
@@ -83,13 +82,15 @@ class BrainRepository:
 
     def create(self, brain: Brain) -> Brain:
         self.conn.execute('''
-            INSERT INTO brains (id, name, description, default_model_config_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO brains (id, name, description, default_model_config_json,
+                               template_type, system_prompt, created_at, updated_at)
+            VALUES (?, ?, ?, '{}', ?, ?, ?, ?)
         ''', [
             brain.id,
             brain.name,
             brain.description,
-            json.dumps(brain.default_model_config.to_dict()),
+            brain.template_type,
+            brain.system_prompt,
             _dt_to_str(brain.created_at),
             _dt_to_str(brain.updated_at)
         ])
@@ -108,12 +109,14 @@ class BrainRepository:
     def update(self, brain: Brain) -> Brain:
         brain.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.conn.execute('''
-            UPDATE brains SET name = ?, description = ?, default_model_config_json = ?, updated_at = ?
+            UPDATE brains SET name = ?, description = ?, template_type = ?,
+                             system_prompt = ?, updated_at = ?
             WHERE id = ?
         ''', [
             brain.name,
             brain.description,
-            json.dumps(brain.default_model_config.to_dict()),
+            brain.template_type,
+            brain.system_prompt,
             _dt_to_str(brain.updated_at),
             brain.id
         ])
@@ -133,91 +136,10 @@ class BrainRepository:
             id=row[0],
             name=row[1],
             description=row[2] or '',
-            default_model_config=ModelConfig.from_dict(json.loads(row[3])),
-            created_at=_str_to_dt(row[4]),
-            updated_at=_str_to_dt(row[5])
-        )
-
-
-# =============================================================================
-# Repository: BrainTools
-# =============================================================================
-
-class BrainToolRepository:
-    def __init__(self, db: Database):
-        self.db = db
-        self.conn = db.conn
-
-    def create(self, tool: BrainTool) -> BrainTool:
-        self.conn.execute('''
-            INSERT INTO brain_tools (id, brain_id, tool_type, name, description,
-                                    config_json, enabled, position, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', [
-            tool.id,
-            tool.brain_id,
-            tool.tool_type.value,
-            tool.name,
-            tool.description,
-            json.dumps(tool.config) if tool.config else None,
-            1 if tool.enabled else 0,
-            tool.position,
-            _dt_to_str(tool.created_at)
-        ])
-        self.conn.commit()
-        return tool
-
-    def get(self, tool_id: str) -> Optional[BrainTool]:
-        cursor = self.conn.execute('SELECT * FROM brain_tools WHERE id = ?', [tool_id])
-        row = cursor.fetchone()
-        return self._row_to_tool(row) if row else None
-
-    def get_by_brain(self, brain_id: str) -> list[BrainTool]:
-        cursor = self.conn.execute(
-            'SELECT * FROM brain_tools WHERE brain_id = ? ORDER BY position',
-            [brain_id]
-        )
-        return [self._row_to_tool(row) for row in cursor.fetchall()]
-
-    def get_enabled_by_brain(self, brain_id: str) -> list[BrainTool]:
-        cursor = self.conn.execute(
-            'SELECT * FROM brain_tools WHERE brain_id = ? AND enabled = 1 ORDER BY position',
-            [brain_id]
-        )
-        return [self._row_to_tool(row) for row in cursor.fetchall()]
-
-    def update(self, tool: BrainTool) -> BrainTool:
-        self.conn.execute('''
-            UPDATE brain_tools SET name = ?, description = ?, config_json = ?,
-                                  enabled = ?, position = ?
-            WHERE id = ?
-        ''', [
-            tool.name,
-            tool.description,
-            json.dumps(tool.config) if tool.config else None,
-            1 if tool.enabled else 0,
-            tool.position,
-            tool.id
-        ])
-        self.conn.commit()
-        return tool
-
-    def delete(self, tool_id: str) -> bool:
-        self.conn.execute('DELETE FROM brain_tools WHERE id = ?', [tool_id])
-        self.conn.commit()
-        return True
-
-    def _row_to_tool(self, row) -> BrainTool:
-        return BrainTool(
-            id=row[0],
-            brain_id=row[1],
-            tool_type=ToolType(row[2]),
-            name=row[3],
-            description=row[4] or '',
-            config=json.loads(row[5]) if row[5] else {},
-            enabled=bool(row[6]),
-            position=row[7],
-            created_at=_str_to_dt(row[8])
+            template_type=row[4],
+            system_prompt=row[5] or '',
+            created_at=_str_to_dt(row[6]),
+            updated_at=_str_to_dt(row[7])
         )
 
 
@@ -234,13 +156,12 @@ class QuestionRepository:
         self.conn.execute('''
             INSERT INTO questions (id, brain_id, text, position,
                                  model_config_override_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, NULL, ?, ?)
         ''', [
             question.id,
             question.brain_id,
             question.text,
             question.position,
-            json.dumps(question.model_config_override.to_dict()) if question.model_config_override else None,
             _dt_to_str(question.created_at),
             _dt_to_str(question.updated_at)
         ])
@@ -262,13 +183,11 @@ class QuestionRepository:
     def update(self, question: Question) -> Question:
         question.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.conn.execute('''
-            UPDATE questions SET text = ?, position = ?,
-                               model_config_override_json = ?, updated_at = ?
+            UPDATE questions SET text = ?, position = ?, updated_at = ?
             WHERE id = ?
         ''', [
             question.text,
             question.position,
-            json.dumps(question.model_config_override.to_dict()) if question.model_config_override else None,
             _dt_to_str(question.updated_at),
             question.id
         ])
@@ -286,7 +205,6 @@ class QuestionRepository:
             brain_id=row[1],
             text=row[2],
             position=row[3],
-            model_config_override=ModelConfig.from_dict(json.loads(row[4])) if row[4] else None,
             created_at=_str_to_dt(row[5]),
             updated_at=_str_to_dt(row[6])
         )
@@ -834,86 +752,16 @@ class ExecutionStepRepository:
 
 
 # =============================================================================
-# Repository: MCPServers
-# =============================================================================
-
-class MCPServerRepository:
-    """CRUD operations for MCPServer entities."""
-
-    def __init__(self, db: Database):
-        self.db = db
-        self.conn = db.conn
-
-    def create(self, server: MCPServer) -> MCPServer:
-        self.conn.execute("""
-            INSERT INTO mcp_servers (id, name, display_name, server_command,
-                                    status, capabilities_json)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, [
-            server.id,
-            server.name,
-            server.display_name,
-            server.server_command,
-            server.status.value,
-            json.dumps(server.capabilities)
-        ])
-        self.conn.commit()
-        return server
-
-    def get(self, server_id: str) -> Optional[MCPServer]:
-        cursor = self.conn.execute(
-            "SELECT * FROM mcp_servers WHERE id = ?", [server_id]
-        )
-        row = cursor.fetchone()
-        return self._row_to_server(row) if row else None
-
-    def get_by_name(self, name: str) -> Optional[MCPServer]:
-        cursor = self.conn.execute(
-            "SELECT * FROM mcp_servers WHERE name = ?", [name]
-        )
-        row = cursor.fetchone()
-        return self._row_to_server(row) if row else None
-
-    def get_all(self) -> list[MCPServer]:
-        cursor = self.conn.execute("SELECT * FROM mcp_servers")
-        return [self._row_to_server(row) for row in cursor.fetchall()]
-
-    def update_status(self, server_id: str, status: MCPStatus) -> None:
-        self.conn.execute(
-            "UPDATE mcp_servers SET status = ? WHERE id = ?",
-            [status.value, server_id]
-        )
-        self.conn.commit()
-
-    def delete(self, server_id: str) -> bool:
-        self.conn.execute("DELETE FROM mcp_servers WHERE id = ?", [server_id])
-        self.conn.commit()
-        return True
-
-    def _row_to_server(self, row) -> MCPServer:
-        return MCPServer(
-            id=row[0],
-            name=row[1],
-            display_name=row[2],
-            server_command=row[3],
-            status=MCPStatus(row[4]),
-            capabilities=json.loads(row[5]) if row[5] else []
-        )
-
-
-# =============================================================================
 # Repository: UserSettings
 # =============================================================================
 
 class UserSettingsRepository:
-    """CRUD operations for UserSettings (singleton)."""
-
     def __init__(self, db: Database):
         self.db = db
         self.conn = db.conn
 
     def get(self) -> UserSettings:
-        cursor = self.conn.execute("SELECT * FROM user_settings WHERE id = 1")
+        cursor = self.conn.execute('SELECT * FROM user_settings WHERE id = 1')
         row = cursor.fetchone()
         if not row:
             return UserSettings()
@@ -921,9 +769,9 @@ class UserSettingsRepository:
             default_input_device=row[1],
             default_output_device=row[2],
             default_brain_id=row[3],
-            preferred_model=row[4] or 'gpt-4o',
             data_directory=row[5],
-            max_session_storage_days=row[6] or 30
+            max_session_storage_days=row[6] or 30,
+            onboarding_complete=bool(row[7])
         )
 
     def update(self, settings: UserSettings) -> UserSettings:
@@ -932,17 +780,18 @@ class UserSettingsRepository:
                 default_input_device = ?,
                 default_output_device = ?,
                 default_brain_id = ?,
-                preferred_model = ?,
+                preferred_model = '',
                 data_directory = ?,
-                max_session_storage_days = ?
+                max_session_storage_days = ?,
+                onboarding_complete = ?
             WHERE id = 1
         ''', [
             settings.default_input_device,
             settings.default_output_device,
             settings.default_brain_id,
-            settings.preferred_model,
             settings.data_directory,
-            settings.max_session_storage_days
+            settings.max_session_storage_days,
+            1 if settings.onboarding_complete else 0
         ])
         self.conn.commit()
         return settings

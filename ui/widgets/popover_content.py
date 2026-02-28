@@ -11,9 +11,8 @@ from PySide6.QtCore import Qt, QTimer, Signal
 
 import qtawesome as qta
 
-from models import Session, TranscriptEntry, SpeakerType, QueryType, StepType, ExecutionStep, Brain, BrainTool, ToolType, Question, Resource, ResourceType, IndexStatus
+from models import Session, TranscriptEntry, SpeakerType, QueryType, StepType, ExecutionStep, Brain, Question, Resource, ResourceType, IndexStatus
 from services.embedder import Embedder
-from services.database import BrainToolRepository
 from ui.styles import STYLE_SHEET
 from ui.threads import ModelDownloadThread, QueryExecutionThread, IndexThread, EstimateThread
 
@@ -419,14 +418,6 @@ class PopoverContent(QWidget):
         self._brain_name_input.setText(self._editing_brain.name)
         self._brain_desc_input.setText(self._editing_brain.description)
 
-        tool_repo = BrainToolRepository(self.app.db)
-        tools = tool_repo.get_by_brain(self._editing_brain.id)
-        tool_types = {t.tool_type for t in tools if t.enabled}
-
-        self._files_toggle.setChecked(ToolType.SEARCH_FILES in tool_types)
-        self._web_toggle.setChecked(ToolType.WEB_SEARCH in tool_types)
-        self._code_toggle.setChecked(ToolType.CODE_INTERPRETER in tool_types)
-
         self._load_resource_links()
         self._stack.setCurrentIndex(1)
 
@@ -435,31 +426,6 @@ class PopoverContent(QWidget):
             return
         self._editing_brain.name = self._brain_name_input.text().strip() or 'Unnamed Brain'
         self._editing_brain.description = self._brain_desc_input.text().strip()
-
-        tool_repo = BrainToolRepository(self.app.db)
-        existing_tools = tool_repo.get_by_brain(self._editing_brain.id)
-        existing_by_type = {t.tool_type: t for t in existing_tools}
-
-        tool_states = [
-            (ToolType.SEARCH_FILES, self._files_toggle.isChecked(), 'Search files', 'Search through linked files and folders'),
-            (ToolType.WEB_SEARCH, self._web_toggle.isChecked(), 'Search web', 'Search the web for information'),
-            (ToolType.CODE_INTERPRETER, self._code_toggle.isChecked(), 'Run code', 'Run and test code'),
-        ]
-
-        for tool_type, enabled, name, desc in tool_states:
-            if tool_type in existing_by_type:
-                tool = existing_by_type[tool_type]
-                if tool.enabled != enabled:
-                    tool.enabled = enabled
-                    tool_repo.update(tool)
-            elif enabled:
-                tool_repo.create(BrainTool(
-                    brain_id=self._editing_brain.id,
-                    tool_type=tool_type,
-                    name=name,
-                    description=desc,
-                    enabled=True
-                ))
 
         current_links = set(r.id for r in self.app.resource_repo.get_by_brain(self._editing_brain.id))
         new_links = set(rid for rid, cb in self._resource_checkboxes.items() if cb.isChecked())
@@ -778,16 +744,10 @@ class PopoverContent(QWidget):
         return view
 
     def _show_settings(self):
-        settings = self.app.settings_repo.get()
         from services.secrets import secrets
         api_key = secrets.get('openai_api_key')
         self._api_key_input.setText(api_key or '')
         self._update_api_key_status(api_key)
-
-        for i in range(self._model_combo.count()):
-            if self._model_combo.itemData(i) == settings.preferred_model:
-                self._model_combo.setCurrentIndex(i)
-                break
 
         self._stack.setCurrentIndex(4)
 
@@ -799,9 +759,6 @@ class PopoverContent(QWidget):
         else:
             secrets.delete('openai_api_key')
 
-        settings = self.app.settings_repo.get()
-        settings.preferred_model = self._model_combo.currentData()
-        self.app.settings_repo.update(settings)
         self._stack.setCurrentIndex(0)
 
     def _update_api_key_status(self, key: Optional[str]):

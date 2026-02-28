@@ -1,9 +1,9 @@
 from models import (
-    Brain, BrainTool, Question, Session, TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    QueryType, StepType, StepStatus, SpeakerType, ModelConfig, ToolType
+    Brain, Question, Session, TranscriptEntry, Interaction, AIResponse, ExecutionStep,
+    QueryType, StepType, StepStatus, SpeakerType
 )
 from services.database import (
-    BrainRepository, BrainToolRepository, QuestionRepository, SessionRepository,
+    BrainRepository, QuestionRepository, SessionRepository,
     TranscriptEntryRepository, InteractionRepository
 )
 from services.query_execution import QueryExecutionService, QueryContext, ExecutionCallbacks
@@ -60,49 +60,6 @@ class TestQueryExecutionService:
         assert service.db == db
         assert service.embedder is not None
 
-    def test_resolve_config_uses_brain_defaults(self, db):
-        brain_repo = BrainRepository(db)
-        config = ModelConfig(model='gpt-4o', temperature=0.5)
-        brain = brain_repo.create(Brain(
-            name='Test',
-            default_model_config=config
-        ))
-
-        service = QueryExecutionService(db, MockEmbedder())
-        ctx = QueryContext(session_id='s1', brain=brain, query_text='test')
-
-        resolved_config = service._resolve_config(ctx)
-        assert resolved_config.model == 'gpt-4o'
-        assert resolved_config.temperature == 0.5
-
-    def test_resolve_config_uses_question_override(self, db):
-        brain_repo = BrainRepository(db)
-        question_repo = QuestionRepository(db)
-
-        brain = brain_repo.create(Brain(
-            name='Test',
-            default_model_config=ModelConfig(model='gpt-4o', temperature=0.5)
-        ))
-
-        question = question_repo.create(Question(
-            brain_id=brain.id,
-            text='Custom question',
-            model_config_override=ModelConfig(model='gpt-4o-mini', temperature=0.2)
-        ))
-
-        service = QueryExecutionService(db, MockEmbedder())
-        ctx = QueryContext(
-            session_id='s1',
-            brain=brain,
-            query_text='test',
-            query_type=QueryType.PRESET,
-            question_id=question.id
-        )
-
-        resolved_config = service._resolve_config(ctx)
-        assert resolved_config.model == 'gpt-4o-mini'
-        assert resolved_config.temperature == 0.2
-
     def test_create_interaction(self, db):
         brain_repo = BrainRepository(db)
         session_repo = SessionRepository(db)
@@ -124,20 +81,22 @@ class TestQueryExecutionService:
         assert interaction.query_text == 'What is this about?'
         assert interaction.query_type == QueryType.FREEFORM
 
-    def test_build_system_prompt(self, db):
-        brain_repo = BrainRepository(db)
-        tool_repo = BrainToolRepository(db)
-
-        brain = brain_repo.create(Brain(name='Interview Helper', description='Helps with interviews'))
-        tool_repo.create(BrainTool(brain_id=brain.id, tool_type=ToolType.SEARCH_FILES, name='Search', description='Search files'))
-
+    def test_build_system_prompt_default(self, db):
         service = QueryExecutionService(db, MockEmbedder())
-        tools = tool_repo.get_by_brain(brain.id)
-        prompt = service._build_system_prompt(brain, tools)
+        brain = Brain(name='Interview Helper', description='Helps with interviews')
+
+        prompt = service._build_system_prompt(brain)
 
         assert 'Interview Helper' in prompt
         assert 'Helps with interviews' in prompt
-        assert 'Search' in prompt
+
+    def test_build_system_prompt_custom(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test', system_prompt='You are a custom assistant.')
+
+        prompt = service._build_system_prompt(brain)
+
+        assert prompt == 'You are a custom assistant.'
 
 
 class TestConversationContext:

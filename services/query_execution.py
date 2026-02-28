@@ -3,11 +3,11 @@ from typing import Callable, Optional
 import time
 
 from models import (
-    Brain, BrainTool, Interaction, AIResponse, ExecutionStep, FileReference,
-    TranscriptEntry, QueryType, StepType, StepStatus, ModelConfig, ResourceType, ToolType
+    Brain, Interaction, AIResponse, ExecutionStep, FileReference,
+    TranscriptEntry, QueryType, StepType, StepStatus, ResourceType
 )
 from services.database import (
-    Database, BrainToolRepository, QuestionRepository,
+    Database, QuestionRepository,
     InteractionRepository, AIResponseRepository, ExecutionStepRepository,
     RAGService, ResourceRepository
 )
@@ -16,6 +16,11 @@ from services.conversation import ConversationContextCache
 
 
 _context_cache = ConversationContextCache()
+
+TOOLS = [
+    {'type': 'web_search'},
+    {'type': 'code_interpreter', 'container': {'type': 'auto'}},
+]
 
 
 @dataclass
@@ -39,7 +44,6 @@ class QueryExecutionService:
     def __init__(self, db: Database, embedder):
         self.db = db
         self.embedder = embedder
-        self._tool_repo = BrainToolRepository(db)
         self._question_repo = QuestionRepository(db)
         self._interaction_repo = InteractionRepository(db)
         self._response_repo = AIResponseRepository(db)
@@ -51,10 +55,7 @@ class QueryExecutionService:
     def execute(self, ctx: QueryContext, callbacks: ExecutionCallbacks) -> AIResponse:
         start_time = time.time()
 
-        config = self._resolve_config(ctx)
-        tools = self._tool_repo.get_enabled_by_brain(ctx.brain.id)
         interaction = self._create_interaction(ctx)
-
         conversation = _context_cache.get(ctx.session_id, ctx.brain.id)
 
         transcript_ids = []
@@ -67,29 +68,26 @@ class QueryExecutionService:
         transcript_ids = conversation.get_transcript_ids()
         self._complete_step(step.id, callbacks.on_step)
 
-        has_search_tool = any(t.tool_type == ToolType.SEARCH_FILES for t in tools)
-        if has_search_tool:
-            linked_resources = self._resource_repo.get_by_brain(ctx.brain.id)
-            folder_ids = [r.id for r in linked_resources if r.resource_type == ResourceType.FOLDER]
-            if folder_ids:
-                step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
-                rag_context, file_refs, resource_ids = self._gather_rag_context(folder_ids, ctx.query_text)
-                self._complete_step(step.id, callbacks.on_step)
+        linked_resources = self._resource_repo.get_by_brain(ctx.brain.id)
+        folder_ids = [r.id for r in linked_resources if r.resource_type == ResourceType.FOLDER]
+        if folder_ids:
+            step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
+            rag_context, file_refs, resource_ids = self._gather_rag_context(folder_ids, ctx.query_text)
+            self._complete_step(step.id, callbacks.on_step)
 
         interaction.transcript_snapshot = transcript_ids
         interaction.resources_used = resource_ids
         self._interaction_repo.update(interaction)
 
-        system_prompt = self._build_system_prompt(ctx.brain, tools)
+        system_prompt = self._build_system_prompt(ctx.brain)
         messages = self._build_messages(conversation, ctx.query_text, rag_context)
-        tool_defs = self._build_tools(tools)
 
         step = self._emit_step(interaction.id, StepType.GENERATING, callbacks.on_step)
 
         gen = self._llm.stream(
-            messages, config, system_prompt,
+            messages, system_prompt,
             lambda delta, is_final: callbacks.on_delta(delta) if not is_final else None,
-            tools=tool_defs
+            tools=TOOLS
         )
         while True:
             try:
@@ -114,14 +112,6 @@ class QueryExecutionService:
         self._response_repo.create(response)
         callbacks.on_complete(response)
         return response
-
-    def _resolve_config(self, ctx: QueryContext) -> ModelConfig:
-        config = ctx.brain.default_model_config
-        if ctx.question_id:
-            question = self._question_repo.get(ctx.question_id)
-            if question and question.model_config_override:
-                config = question.model_config_override
-        return config
 
     def _create_interaction(self, ctx: QueryContext) -> Interaction:
         interaction = Interaction(
@@ -186,30 +176,12 @@ class QueryExecutionService:
         messages.append(Message(role='user', content='\n\n'.join(content_parts)))
         return messages
 
-    def _build_system_prompt(self, brain: Brain, tools: list[BrainTool]) -> str:
+    def _build_system_prompt(self, brain: Brain) -> str:
+        if brain.system_prompt:
+            return brain.system_prompt
+
         prompt = f'You are {brain.name}'
         if brain.description:
             prompt += f', {brain.description}'
-        prompt += '.'
-
-        if tools:
-            prompt += '\n\nYou have these tools:\n'
-            for tool in tools:
-                prompt += f'- {tool.name}: {tool.description}\n'
-            prompt += '\nUse tools when helpful. Cite sources when referencing files.'
-
-        prompt += '\n\nAnswer based on the conversation and context. Be concise.'
+        prompt += '.\n\nAnswer based on the conversation and context. Be concise.'
         return prompt
-
-    def _build_tools(self, tools: list[BrainTool]) -> Optional[list[dict]]:
-        if not tools:
-            return None
-
-        defs = []
-        for tool in tools:
-            if tool.tool_type == ToolType.WEB_SEARCH:
-                defs.append({'type': 'web_search'})
-            elif tool.tool_type == ToolType.CODE_INTERPRETER:
-                defs.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
-
-        return defs if defs else None

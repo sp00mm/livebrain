@@ -4,7 +4,9 @@ CREATE TABLE IF NOT EXISTS brains (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
-    default_model_config_json TEXT NOT NULL,
+    default_model_config_json TEXT DEFAULT '{}',
+    template_type TEXT,
+    system_prompt TEXT DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -151,9 +153,10 @@ CREATE TABLE IF NOT EXISTS user_settings (
     default_input_device TEXT,
     default_output_device TEXT,
     default_brain_id TEXT,
-    preferred_model TEXT DEFAULT 'gpt-4o',
+    preferred_model TEXT DEFAULT '',
     data_directory TEXT,
     max_session_storage_days INTEGER DEFAULT 30,
+    onboarding_complete INTEGER DEFAULT 0,
     FOREIGN KEY (default_brain_id) REFERENCES brains(id)
 );
 INSERT OR IGNORE INTO user_settings (id) VALUES (1);

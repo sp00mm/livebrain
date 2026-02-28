@@ -2,7 +2,6 @@ from typing import Generator, Optional
 
 from openai import OpenAI
 
-from models import ModelConfig
 from .interfaces import LLMProvider, Message, LLMResponse, StreamCallback
 
 
@@ -10,32 +9,30 @@ class OpenAIProvider(LLMProvider):
     def __init__(self, api_key: str):
         self._client = OpenAI(api_key=api_key)
 
-    def complete(self, messages: list[Message], config: ModelConfig,
+    def complete(self, messages: list[Message], model: str,
                  system_prompt: Optional[str] = None,
                  tools: Optional[list[dict]] = None) -> LLMResponse:
         kwargs = {
-            'model': config.model,
+            'model': model,
             'input': self._build_input(messages),
             'instructions': system_prompt,
-            'temperature': config.temperature,
-            'max_output_tokens': config.max_tokens,
         }
         if tools:
             kwargs['tools'] = tools
         response = self._client.responses.create(**kwargs)
         return LLMResponse(
             text=response.output_text,
-            model=config.model,
+            model=model,
             tokens_input=response.usage.input_tokens if response.usage else 0,
             tokens_output=response.usage.output_tokens if response.usage else 0,
         )
 
-    def stream(self, messages: list[Message], config: ModelConfig,
+    def stream(self, messages: list[Message], model: str,
                system_prompt: Optional[str] = None,
                on_delta: Optional[StreamCallback] = None,
                tools: Optional[list[dict]] = None) -> Generator[str, None, LLMResponse]:
         kwargs = {
-            'model': config.model,
+            'model': model,
             'input': self._build_input(messages),
             'instructions': system_prompt,
             'stream': True,
@@ -57,7 +54,7 @@ class OpenAIProvider(LLMProvider):
                     on_delta('', True)
         return LLMResponse(
             text=full_text,
-            model=config.model,
+            model=model,
             tokens_input=usage.input_tokens if usage else 0,
             tokens_output=usage.output_tokens if usage else 0
         )

@@ -1,5 +1,5 @@
 from services.llm import Message, LLMResponse, LLMProvider, StreamCallback, LLMService
-from models import ModelConfig
+from services.llm.service import DEFAULT_MODEL
 
 
 class TestMessage:
@@ -45,8 +45,5 @@ class TestLLMService:
         service = LLMService(db)
         assert service.db == db
 
-    def test_default_config(self, db):
-        service = LLMService(db)
-        config = service._default_config()
-        assert isinstance(config, ModelConfig)
-        assert config.model == 'gpt-4o'
+    def test_default_model(self):
+        assert DEFAULT_MODEL == 'gpt-5-chat-latest'

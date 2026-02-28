@@ -12,7 +12,6 @@ from .database import (
     InteractionRepository,
     AIResponseRepository,
     ExecutionStepRepository,
-    MCPServerRepository,
     UserSettingsRepository,
     RAGService
 )
@@ -34,7 +33,6 @@ __all__ = [
     'InteractionRepository',
     'AIResponseRepository',
     'ExecutionStepRepository',
-    'MCPServerRepository',
     'UserSettingsRepository',
     'RAGService',
     'AudioService',
