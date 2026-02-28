@@ -8,7 +8,10 @@ repository classes for each entity.
 import json
 import os
 import sys
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Optional
 
 import libsql
@@ -16,9 +19,9 @@ import libsql
 from models import (
     Brain, BrainTool, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    MCPServer, UserSettings, ModelConfig, ToolType,
+    UserSettings, ModelConfig, ToolType,
     FileReference, SpeakerType, QueryType, ResourceType,
-    IndexStatus, StepType, StepStatus, MCPStatus
+    IndexStatus, StepType, StepStatus
 )
 
 
@@ -837,8 +840,24 @@ class ExecutionStepRepository:
 # Repository: MCPServers
 # =============================================================================
 
+class MCPStatus(Enum):
+    DISCONNECTED = 'disconnected'
+    CONNECTING = 'connecting'
+    CONNECTED = 'connected'
+    ERROR = 'error'
+
+
+@dataclass
+class MCPServer:
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ''
+    display_name: str = ''
+    server_command: str = ''
+    status: MCPStatus = MCPStatus.DISCONNECTED
+    capabilities: list[str] = field(default_factory=list)
+
+
 class MCPServerRepository:
-    """CRUD operations for MCPServer entities."""
 
     def __init__(self, db: Database):
         self.db = db

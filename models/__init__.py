@@ -48,7 +48,6 @@ class IndexStatus(Enum):
 class StepType(Enum):
     LISTENING = 'listening'
     SEARCHING_FILES = 'searching_files'
-    MCP_CALL = 'mcp_call'
     GENERATING = 'generating'
 
 
@@ -58,18 +57,53 @@ class StepStatus(Enum):
     FAILED = 'failed'
 
 
-class MCPStatus(Enum):
-    DISCONNECTED = 'disconnected'
-    CONNECTING = 'connecting'
-    CONNECTED = 'connected'
-    ERROR = 'error'
-
-
 class ToolType(Enum):
     SEARCH_FILES = 'search_files'        # RAG - custom, client-side execution
     WEB_SEARCH = 'web_search'            # Built-in, server-side
     CODE_INTERPRETER = 'code_interpreter'  # Built-in, server-side
-    MCP_SERVER = 'mcp_server'            # Custom, client-side execution
+
+
+# =============================================================================
+# Configuration Models
+# =============================================================================
+
+@dataclass
+class ModelConfig:
+    model: str
+    temperature: float = 0.7
+    max_tokens: Optional[int] = None
+    top_p: Optional[float] = None
+    presence_penalty: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    extra_params: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        result = {"model": self.model, "temperature": self.temperature}
+        if self.max_tokens is not None:
+            result["max_tokens"] = self.max_tokens
+        if self.top_p is not None:
+            result["top_p"] = self.top_p
+        if self.presence_penalty is not None:
+            result["presence_penalty"] = self.presence_penalty
+        if self.frequency_penalty is not None:
+            result["frequency_penalty"] = self.frequency_penalty
+        result.update(self.extra_params)
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> 'ModelConfig':
+        known_keys = {"model", "temperature", "max_tokens", "top_p",
+                      "presence_penalty", "frequency_penalty"}
+        extra = {k: v for k, v in data.items() if k not in known_keys}
+        return cls(
+            model=data.get('model', 'gpt-5-chat-latest'),
+            temperature=data.get("temperature", 0.7),
+            max_tokens=data.get("max_tokens"),
+            top_p=data.get("top_p"),
+            presence_penalty=data.get("presence_penalty"),
+            frequency_penalty=data.get("frequency_penalty"),
+            extra_params=extra
+        )
 
 
 # =============================================================================
@@ -81,6 +115,7 @@ class Brain:
     id: str = field(default_factory=generate_id)
     name: str = ''
     description: str = ''
+    default_model_config: ModelConfig = field(default_factory=lambda: ModelConfig(model='gpt-5-chat-latest'))
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
 
@@ -108,13 +143,13 @@ class Question:
     brain_id: str = ''
     text: str = ''
     position: int = 0
+    model_config_override: Optional[ModelConfig] = None
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
 
 
 @dataclass
 class Resource:
-    """Global resource (file or folder) that can be linked to brains."""
     id: str = field(default_factory=generate_id)
     resource_type: ResourceType = ResourceType.FILE
     name: str = ''
@@ -133,7 +168,6 @@ class Resource:
 
 @dataclass
 class DocumentChunk:
-    """Indexed text chunk for semantic retrieval (RAG)."""
     id: str = field(default_factory=generate_id)
     resource_id: str = ''
     filepath: str = ''
@@ -147,7 +181,6 @@ class DocumentChunk:
 
 @dataclass
 class Session:
-    """A recording session with live transcription and interaction history."""
     id: str = field(default_factory=generate_id)
     name: str = ""
     audio_input_device: Optional[str] = None
@@ -160,7 +193,6 @@ class Session:
 
 @dataclass
 class TranscriptEntry:
-    """A single utterance in the conversation transcript."""
     id: str = field(default_factory=generate_id)
     session_id: str = ""
     speaker: SpeakerType = SpeakerType.USER
@@ -171,21 +203,19 @@ class TranscriptEntry:
 
 @dataclass
 class Interaction:
-    """A user query and AI response within a session."""
     id: str = field(default_factory=generate_id)
     session_id: str = ''
     brain_id: str = ''
     question_id: Optional[str] = None
     query_type: QueryType = QueryType.FREEFORM
     query_text: str = ''
-    transcript_snapshot: list[str] = field(default_factory=list)  # TranscriptEntry IDs
-    resources_used: list[str] = field(default_factory=list)       # Resource IDs
+    transcript_snapshot: list[str] = field(default_factory=list)
+    resources_used: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=now)
 
 
 @dataclass
 class FileReference:
-    """A file referenced in an AI response."""
     resource_id: str = ''
     filepath: str = ''
     display_name: str = ''
@@ -211,7 +241,6 @@ class FileReference:
 
 @dataclass
 class AIResponse:
-    """The generated response from the AI."""
     id: str = field(default_factory=generate_id)
     interaction_id: str = ""
     text: str = ""
@@ -225,7 +254,6 @@ class AIResponse:
 
 @dataclass
 class ExecutionStep:
-    """Tracks the 'working' states shown to user during AI processing."""
     id: str = field(default_factory=generate_id)
     interaction_id: str = ""
     step_type: StepType = StepType.GENERATING
@@ -236,21 +264,10 @@ class ExecutionStep:
 
 
 @dataclass
-class MCPServer:
-    """External tool integration via Model Context Protocol."""
-    id: str = field(default_factory=generate_id)
-    name: str = ""               # "notion", "slack"
-    display_name: str = ""       # "Notion"
-    server_command: str = ""     # Command to start server
-    status: MCPStatus = MCPStatus.DISCONNECTED
-    capabilities: list[str] = field(default_factory=list)
-
-
-@dataclass
 class UserSettings:
-    """Global application settings."""
     default_input_device: Optional[str] = None
     default_output_device: Optional[str] = None
     default_brain_id: Optional[str] = None
+    preferred_model: str = 'gpt-5-chat-latest'
     data_directory: Optional[str] = None
     max_session_storage_days: int = 30
