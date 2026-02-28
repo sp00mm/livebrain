@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QGridLayout, QPushButton, QLabel, QFrame
 from PySide6.QtCore import Qt, Signal
 
-from ui.styles import BASE_STYLE, ACCENT, TEXT_SECONDARY, BG_CARD, BG_CARD_HOVER, TEXT_PRIMARY
+from ui.styles import BASE_STYLE, ACCENT, TEXT_SECONDARY, BG_CARD, BG_CARD_HOVER, TEXT_PRIMARY, BORDER_COLOR
 from templates import TEMPLATES
 
 
@@ -11,29 +11,38 @@ class TemplateCard(QFrame):
     def __init__(self, key, name, description, parent=None):
         super().__init__(parent)
         self._key = key
+        self.setObjectName('templateCard')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setMinimumHeight(90)
         self.setStyleSheet(f'''
-            QFrame {{
+            QFrame#templateCard {{
                 background-color: {BG_CARD};
+                border: 1px solid transparent;
                 border-radius: 8px;
                 padding: 16px;
             }}
-            QFrame:hover {{
+            QFrame#templateCard:hover {{
                 background-color: {BG_CARD_HOVER};
+                border: 1px solid {BORDER_COLOR};
             }}
         ''')
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(4)
+        layout.setSpacing(6)
 
         name_label = QLabel(name)
-        name_label.setStyleSheet(f'font-size: 15px; font-weight: 600; color: {TEXT_PRIMARY};')
+        name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        name_label.setStyleSheet(f'font-size: 15px; font-weight: 600; color: {TEXT_PRIMARY}; border: none;')
         layout.addWidget(name_label)
 
         desc_label = QLabel(description)
-        desc_label.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 13px;')
+        desc_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        desc_label.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 13px; border: none;')
         desc_label.setWordWrap(True)
         layout.addWidget(desc_label)
+
+        layout.addStretch()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
