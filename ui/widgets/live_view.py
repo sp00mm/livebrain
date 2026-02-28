@@ -13,6 +13,7 @@ from models import (
     Brain, Question, Session, TranscriptEntry, SpeakerType,
     QueryType, StepType, StepStatus, ExecutionStep, AIResponse
 )
+from services.database import SessionRepository
 from ui.styles import (
     STYLE_SHEET, BG_CARD, BG_CARD_HOVER,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_SECTION, RECORDING_COLOR, ACCENT
@@ -75,6 +76,8 @@ class LiveView(QWidget):
         super().__init__()
         self.app = app
         self._active_brain: Optional[Brain] = None
+        self._session: Optional[Session] = None
+        self._session_repo = SessionRepository(app.db)
         self._query_thread: Optional[QueryExecutionThread] = None
         self._question_rows: list[LiveQuestionRow] = []
         self._active_question_id: Optional[str] = None
@@ -318,6 +321,7 @@ class LiveView(QWidget):
         if brains:
             self._active_brain = brains[0]
             self._brain_combo.setCurrentIndex(0)
+            self._start_new_session()
             self.load_questions(brains[0].id)
         self._brain_combo.blockSignals(False)
 
@@ -332,7 +336,19 @@ class LiveView(QWidget):
             return
         brain_id = self._brain_combo.itemData(index)
         self._active_brain = self.app.brain_repo.get(brain_id)
+        self._start_new_session()
         self.load_questions(brain_id)
+
+    def _start_new_session(self):
+        if not self._active_brain:
+            return
+        if self._session and not self._session.ended_at:
+            self._session_repo.end_session(self._session.id)
+        self._session = Session(
+            name=self._active_brain.name,
+            current_brain_id=self._active_brain.id
+        )
+        self._session_repo.create(self._session)
 
     # -- LB-033: Transcript indicator --
 
@@ -343,8 +359,15 @@ class LiveView(QWidget):
             self._start_recording()
 
     def _start_recording(self):
-        session = Session(name='Recording Session')
+        if self._session and not self._session.ended_at:
+            self._session_repo.end_session(self._session.id)
+        brain_name = self._active_brain.name if self._active_brain else 'Recording'
+        session = Session(
+            name=brain_name,
+            current_brain_id=self._active_brain.id if self._active_brain else None
+        )
         self.app.audio_service.start_session(session, self._on_transcript)
+        self._session = self.app.audio_service.get_current_session()
         self._final_transcripts = []
         self._partial_entry = None
         self._record_btn.setVisible(False)
@@ -355,6 +378,7 @@ class LiveView(QWidget):
         self.app.audio_service.stop_session()
         self._record_btn.setVisible(True)
         self._listening_bar.setVisible(False)
+        self._start_new_session()
 
     def _on_transcript(self, entry: TranscriptEntry, is_final: bool):
         if is_final:
@@ -407,8 +431,7 @@ class LiveView(QWidget):
         if not brain:
             return
 
-        session = self.app.audio_service.get_current_session()
-        session_id = session.id if session else ''
+        session_id = self._session.id
 
         if self._current_query_text and self._current_answer_text:
             self._answer_history.append((self._current_query_text, self._current_answer_text))
