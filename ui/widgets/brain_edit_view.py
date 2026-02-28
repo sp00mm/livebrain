@@ -3,7 +3,8 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QTextEdit, QLabel, QScrollArea, QFrame,
-    QSizePolicy, QFileDialog, QMessageBox
+    QSizePolicy, QFileDialog, QMessageBox,
+    QListView, QTreeView, QAbstractItemView
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -297,7 +298,7 @@ class BrainEditView(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        if self._is_new or not self._brain:
+        if not self._brain:
             return
 
         resources = self.resource_repo.get_by_brain(self._brain.id)
@@ -310,21 +311,50 @@ class BrainEditView(QWidget):
         self.resource_repo.unlink_from_brain(resource.id, self._brain.id)
         self._load_resources()
 
-    def _add_resource(self):
-        folder = QFileDialog.getExistingDirectory(self, 'Select Folder')
-        if not folder:
+    def _ensure_brain_saved(self):
+        if not self._is_new:
             return
+        self._brain.name = self._name_input.text().strip() or 'Unnamed Brain'
+        self._brain.description = self._desc_input.toPlainText().strip()
+        self.brain_repo.create(self._brain)
+        self._is_new = False
 
+    def _add_resource(self):
+        dialog = QFileDialog(self, 'Select Files or Folders')
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
+        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+        for view in dialog.findChildren((QListView, QTreeView)):
+            view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        if not dialog.exec():
+            return
+        self._ensure_brain_saved()
+        for path in dialog.selectedFiles():
+            if os.path.isdir(path):
+                self._add_folder_resource(path)
+            else:
+                self._add_file_resource(path)
+        self._load_resources()
+
+    def _add_folder_resource(self, path):
         resource = Resource(
             resource_type=ResourceType.FOLDER,
-            name=os.path.basename(folder),
-            path=folder,
+            name=os.path.basename(path),
+            path=path,
             index_status=IndexStatus.PENDING
         )
         self.resource_repo.create(resource)
         self.resource_repo.link_to_brain(resource.id, self._brain.id)
-        self._load_resources()
-        self._start_indexing(resource, folder)
+        self._start_indexing(resource, path)
+
+    def _add_file_resource(self, path):
+        resource = Resource(
+            resource_type=ResourceType.FILE,
+            name=os.path.basename(path),
+            path=path,
+            index_status=IndexStatus.INDEXED
+        )
+        self.resource_repo.create(resource)
+        self.resource_repo.link_to_brain(resource.id, self._brain.id)
 
     def _start_indexing(self, resource, folder):
         from services.scanner import FileScanner
