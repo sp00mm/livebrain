@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+import base64
+import mimetypes
 import os
 import time
 
@@ -86,8 +88,10 @@ class QueryExecutionService:
         self._interaction_repo.update(interaction)
 
         file_context = self._gather_file_context(ctx.brain.id)
+        image_blocks, image_refs = self._gather_image_content(ctx.brain.id)
+        file_refs.extend(image_refs)
         system_prompt = self._build_system_prompt(ctx.brain, file_context)
-        messages = self._build_messages(conversation, ctx.query_text, rag_context)
+        messages = self._build_messages(conversation, ctx.query_text, rag_context, image_blocks)
 
         step = self._emit_step(interaction.id, StepType.GENERATING, callbacks.on_step)
 
@@ -172,7 +176,8 @@ class QueryExecutionService:
 
         return '\n---\n'.join(context_parts), file_refs, used_resource_ids
 
-    def _build_messages(self, conversation, query: str, rag_context: str) -> list[Message]:
+    def _build_messages(self, conversation, query: str, rag_context: str,
+                        image_blocks: list[dict] = None) -> list[Message]:
         messages = conversation.build_messages()
 
         content_parts = []
@@ -180,7 +185,13 @@ class QueryExecutionService:
             content_parts.append(f'Relevant documents:\n{rag_context}')
         content_parts.append(query)
 
-        messages.append(Message(role='user', content='\n\n'.join(content_parts)))
+        if image_blocks:
+            content = [{'type': 'input_text', 'text': '\n\n'.join(content_parts)}]
+            content.extend(image_blocks)
+            messages.append(Message(role='user', content=content))
+        else:
+            messages.append(Message(role='user', content='\n\n'.join(content_parts)))
+
         return messages
 
     def _gather_file_context(self, brain_id: str) -> str:
@@ -196,6 +207,26 @@ class QueryExecutionService:
             if content:
                 parts.append(f'[{f.name}]\n{content}')
         return '\n---\n'.join(parts)
+
+    def _gather_image_content(self, brain_id: str) -> tuple[list[dict], list[FileReference]]:
+        resources = self._resource_repo.get_by_brain(brain_id)
+        blocks = []
+        refs = []
+        for r in resources:
+            if r.resource_type != ResourceType.FILE:
+                continue
+            ext = os.path.splitext(r.path)[1].lower()
+            if ext not in IMAGE_EXTENSIONS:
+                continue
+            with open(r.path, 'rb') as f:
+                b64 = base64.b64encode(f.read()).decode('utf-8')
+            mime = mimetypes.guess_type(r.path)[0] or 'image/png'
+            blocks.append({'type': 'input_image', 'image_url': f'data:{mime};base64,{b64}'})
+            refs.append(FileReference(
+                resource_id=r.id, filepath=r.path,
+                display_name=r.name, relevance_score=1.0
+            ))
+        return blocks, refs
 
     def _build_system_prompt(self, brain: Brain, file_context: str = '') -> str:
         if brain.system_prompt:
