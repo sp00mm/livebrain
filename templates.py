@@ -17,6 +17,7 @@ class Template:
     steps: list[TemplateStep] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
     system_prompt_template: str = ''
+    system_context: str = ''
 
 
 TEMPLATES: dict[str, Template] = {
@@ -57,6 +58,11 @@ TEMPLATES: dict[str, Template] = {
             '{job_description}\n\n'
             '{resume}'
         ),
+        system_context=(
+            'You are helping an interviewer evaluate a job candidate in real time. '
+            'Focus on assessing role fit, identifying red flags, and suggesting '
+            'follow-up questions based on what the candidate says.'
+        ),
     ),
     'standup': Template(
         key='standup',
@@ -87,6 +93,11 @@ TEMPLATES: dict[str, Template] = {
             'You are a technical assistant with deep knowledge of the codebase and project docs. '
             'Provide code-level insights, reference specific files, estimate timelines, '
             'and help ask smart follow-up questions. Technical but concise.'
+        ),
+        system_context=(
+            'You are helping a developer during a team standup meeting. '
+            'Reference specific files and code when possible. Provide technical '
+            'insights and help track action items.'
         ),
     ),
     'sales_call': Template(
@@ -126,6 +137,11 @@ TEMPLATES: dict[str, Template] = {
             '{product_description}\n\n'
             '{prospect_profile}'
         ),
+        system_context=(
+            'You are coaching a salesperson during a live customer call. '
+            'Focus on objection handling, identifying buying signals, and '
+            'suggesting closing strategies.'
+        ),
     ),
     'live_debate': Template(
         key='live_debate',
@@ -164,6 +180,10 @@ TEMPLATES: dict[str, Template] = {
             'identify logical weaknesses, and recommend powerful responses. Quick and decisive.\n\n'
             '{topic}\n\n'
             '{position}'
+        ),
+        system_context=(
+            'You are coaching a debater during a live debate. Fact-check claims '
+            'in real time, identify logical fallacies, and suggest counterarguments.'
         ),
     ),
 }
