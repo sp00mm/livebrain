@@ -339,7 +339,7 @@ class TestImageContent:
         from services.conversation import ConversationContext
         conv = ConversationContext(session_id='s1', brain_id='b1')
         image_blocks = [{'type': 'input_image', 'image_url': 'data:image/png;base64,abc'}]
-        messages = service._build_messages(conv, 'describe this', '', image_blocks)
+        messages = service._build_messages(conv, 'describe this', image_blocks)
         assert isinstance(messages[-1].content, list)
         assert messages[-1].content[0]['type'] == 'input_text'
         assert messages[-1].content[1]['type'] == 'input_image'
@@ -348,7 +348,7 @@ class TestImageContent:
         service = QueryExecutionService(db, MockEmbedder())
         from services.conversation import ConversationContext
         conv = ConversationContext(session_id='s1', brain_id='b1')
-        messages = service._build_messages(conv, 'hello', '')
+        messages = service._build_messages(conv, 'hello')
         assert isinstance(messages[-1].content, str)
 
 

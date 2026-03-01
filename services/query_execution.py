@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 import base64
+import json
 import mimetypes
 import os
 import time
@@ -23,10 +24,23 @@ _context_cache = ConversationContextCache()
 
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp'}
 
-TOOLS = [
-    {'type': 'web_search'},
-    {'type': 'code_interpreter', 'container': {'type': 'auto'}},
-]
+SEARCH_FILES_TOOL = {
+    'type': 'function',
+    'name': 'search_files',
+    'description': "Search through the user's files and folders for relevant information. Use when the user asks about their documents or you need context from their files.",
+    'parameters': {
+        'type': 'object',
+        'properties': {
+            'query': {
+                'type': 'string',
+                'description': 'Natural language search query to find relevant content'
+            }
+        },
+        'required': ['query'],
+        'additionalProperties': False
+    },
+    'strict': True
+}
 
 
 @dataclass
@@ -65,8 +79,6 @@ class QueryExecutionService:
         interaction = self._create_interaction(ctx)
         real_cache = _context_cache.get(ctx.session_id, ctx.brain.id)
 
-        transcript_ids = []
-        rag_context = ''
         file_refs = []
         resource_ids = []
 
@@ -78,41 +90,67 @@ class QueryExecutionService:
 
         linked_resources = self._resource_repo.get_by_brain(ctx.brain.id)
         folder_ids = [r.id for r in linked_resources if r.resource_type == ResourceType.FOLDER]
-        if folder_ids:
-            step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
-            rag_context, file_refs, resource_ids = self._gather_rag_context(folder_ids, ctx.query_text)
-            self._complete_step(step.id, callbacks.on_step)
 
         interaction.transcript_snapshot = transcript_ids
-        interaction.resources_used = resource_ids
         self._interaction_repo.update(interaction)
 
         file_context = self._gather_file_context(ctx.brain.id)
         image_blocks, image_refs = self._gather_image_content(ctx.brain.id)
         file_refs.extend(image_refs)
 
-        source_names = list(dict.fromkeys(
-            [ref.display_name for ref in file_refs]
-            + [r.name for r in linked_resources if r.resource_type == ResourceType.FILE]
-        ))
+        tools = self._build_tools(folder_ids)
+        messages = self._build_messages(conversation, ctx.query_text, image_blocks)
 
-        system_prompt = self._build_system_prompt(ctx.brain, file_context, source_names or None)
-        messages = self._build_messages(conversation, ctx.query_text, rag_context, image_blocks)
+        extra_input = []
+        total_input_tokens = 0
+        total_output_tokens = 0
 
-        step = self._emit_step(interaction.id, StepType.GENERATING, callbacks.on_step)
+        for _ in range(5):
+            source_names = list(dict.fromkeys(
+                [ref.display_name for ref in file_refs]
+                + [r.name for r in linked_resources if r.resource_type == ResourceType.FILE]
+            ))
+            system_prompt = self._build_system_prompt(ctx.brain, file_context, source_names or None)
 
-        gen = self._llm.stream(
-            messages, system_prompt,
-            lambda delta, is_final: callbacks.on_delta(delta) if not is_final else None,
-            tools=TOOLS
-        )
-        while True:
-            try:
-                delta = next(gen)
-            except StopIteration as e:
-                llm_response = e.value
+            step = self._emit_step(interaction.id, StepType.GENERATING, callbacks.on_step)
+
+            gen = self._llm.stream(
+                messages, system_prompt,
+                lambda delta, is_final: callbacks.on_delta(delta) if not is_final else None,
+                tools=tools, extra_input=extra_input or None
+            )
+            while True:
+                try:
+                    next(gen)
+                except StopIteration as e:
+                    llm_response = e.value
+                    break
+            self._complete_step(step.id, callbacks.on_step)
+
+            total_input_tokens += llm_response.tokens_input
+            total_output_tokens += llm_response.tokens_output
+
+            if not llm_response.tool_calls:
                 break
-        self._complete_step(step.id, callbacks.on_step)
+
+            for item in llm_response.output_items:
+                extra_input.append(item.model_dump())
+
+            for tc in llm_response.tool_calls:
+                step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
+                result, refs, res_ids = self._execute_tool(tc.name, json.loads(tc.arguments), folder_ids)
+                file_refs.extend(refs)
+                resource_ids.extend(res_ids)
+                self._complete_step(step.id, callbacks.on_step)
+
+                extra_input.append({
+                    'type': 'function_call_output',
+                    'call_id': tc.call_id,
+                    'output': result
+                })
+
+        interaction.resources_used = resource_ids
+        self._interaction_repo.update(interaction)
 
         real_cache.add_qa(ctx.query_text, llm_response.text)
 
@@ -122,8 +160,8 @@ class QueryExecutionService:
             text=llm_response.text,
             file_references=file_refs,
             model_used=llm_response.model,
-            tokens_input=llm_response.tokens_input,
-            tokens_output=llm_response.tokens_output,
+            tokens_input=total_input_tokens,
+            tokens_output=total_output_tokens,
             latency_ms=latency_ms
         )
         self._response_repo.create(response)
@@ -151,27 +189,38 @@ class QueryExecutionService:
         self._step_repo.complete(step_id)
         on_step(ExecutionStep(id=step_id, status=StepStatus.COMPLETED))
 
-    def _gather_rag_context(self, resource_ids: list[str], query: str) -> tuple[str, list[FileReference], list[str]]:
-        if not resource_ids:
-            return '', [], []
+    def _build_tools(self, folder_ids: list[str]) -> list[dict]:
+        tools = [
+            {'type': 'web_search'},
+            {'type': 'code_interpreter', 'container': {'type': 'auto'}},
+        ]
+        if folder_ids:
+            tools.append(SEARCH_FILES_TOOL)
+        return tools
 
+    def _execute_tool(self, name: str, args: dict, folder_ids: list[str]) -> tuple[str, list[FileReference], list[str]]:
+        if name == 'search_files':
+            return self._tool_search_files(args['query'], folder_ids)
+        raise ValueError(f'Unknown tool: {name}')
+
+    def _tool_search_files(self, query: str, folder_ids: list[str]) -> tuple[str, list[FileReference], list[str]]:
         embedding = self.embedder.embed(query, is_query=True)
-        results = self._rag.search(embedding, resource_ids=resource_ids, limit=10)
-
+        results = self._rag.search(embedding, resource_ids=folder_ids, limit=10)
         context_parts = []
         file_refs = []
         used_resource_ids = []
-        seen_resources = set()
-
+        seen = set()
         for r in results:
             resource = r['resource']
             chunk = r['chunk']
             similarity = r['similarity']
-
-            context_parts.append(f'[{resource.name}]\n{chunk.text}')
-
-            if resource.id not in seen_resources:
-                seen_resources.add(resource.id)
+            context_parts.append(json.dumps({
+                'source': resource.name,
+                'text': chunk.text,
+                'relevance': round(similarity, 3)
+            }))
+            if resource.id not in seen:
+                seen.add(resource.id)
                 used_resource_ids.append(resource.id)
                 file_refs.append(FileReference(
                     resource_id=resource.id,
@@ -179,25 +228,17 @@ class QueryExecutionService:
                     display_name=resource.name,
                     relevance_score=similarity
                 ))
+        return f'[{",".join(context_parts)}]', file_refs, used_resource_ids
 
-        return '\n---\n'.join(context_parts), file_refs, used_resource_ids
-
-    def _build_messages(self, conversation, query: str, rag_context: str,
+    def _build_messages(self, conversation, query: str,
                         image_blocks: list[dict] = None) -> list[Message]:
         messages = conversation.build_messages()
-
-        content_parts = []
-        if rag_context:
-            content_parts.append(f'Relevant documents:\n{rag_context}')
-        content_parts.append(query)
-
         if image_blocks:
-            content = [{'type': 'input_text', 'text': '\n\n'.join(content_parts)}]
+            content = [{'type': 'input_text', 'text': query}]
             content.extend(image_blocks)
             messages.append(Message(role='user', content=content))
         else:
-            messages.append(Message(role='user', content='\n\n'.join(content_parts)))
-
+            messages.append(Message(role='user', content=query))
         return messages
 
     def _gather_file_context(self, brain_id: str) -> str:
