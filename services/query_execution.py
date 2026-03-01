@@ -61,7 +61,7 @@ class ExecutionCallbacks:
     on_step: Callable[[ExecutionStep], None]
     on_delta: Callable[[str], None]
     on_complete: Callable[[AIResponse], None]
-    on_tool_call: Callable | None = None
+    on_tool_call: Callable
 
 
 class QueryExecutionService:
@@ -154,14 +154,12 @@ class QueryExecutionService:
                 resource_ids.extend(res_ids)
                 self._complete_step(step.id, callbacks.on_step)
 
-                if callbacks.on_tool_call:
-                    callbacks.on_tool_call(ToolCallDetail(
-                        tool_name=tc.name,
-                        query=args.get('query', ''),
-                        results_count=len(refs),
-                        matched_files=[r.display_name for r in refs],
-                        duration_ms=tool_duration
-                    ))
+                callbacks.on_tool_call(ToolCallDetail(
+                    query=args['query'],
+                    results_count=len(refs),
+                    matched_files=[r.display_name for r in refs],
+                    duration_ms=tool_duration
+                ))
 
                 extra_input.append({
                     'type': 'function_call_output',

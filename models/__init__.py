@@ -223,7 +223,6 @@ class ChatFeedItem:
 
 @dataclass
 class ToolCallDetail:
-    tool_name: str = ''
     query: str = ''
     results_count: int = 0
     matched_files: list[str] = field(default_factory=list)

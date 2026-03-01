@@ -193,10 +193,7 @@ class ToolCallItem(QFrame):
             files_label.setWordWrap(True)
             detail_layout.addWidget(files_label)
 
-        meta_parts = [f'{detail.results_count} results']
-        if detail.duration_ms:
-            meta_parts.append(f'{detail.duration_ms}ms')
-        meta_label = QLabel(' \u00b7 '.join(meta_parts))
+        meta_label = QLabel(f'{detail.results_count} results \u00b7 {detail.duration_ms}ms')
         meta_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
         detail_layout.addWidget(meta_label)
 

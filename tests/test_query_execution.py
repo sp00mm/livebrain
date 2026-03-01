@@ -56,11 +56,13 @@ class TestExecutionCallbacks:
         callbacks = ExecutionCallbacks(
             on_step=lambda s: None,
             on_delta=lambda d: None,
-            on_complete=lambda r: None
+            on_complete=lambda r: None,
+            on_tool_call=lambda d: None
         )
         assert callable(callbacks.on_step)
         assert callable(callbacks.on_delta)
         assert callable(callbacks.on_complete)
+        assert callable(callbacks.on_tool_call)
 
 
 class TestQueryExecutionService:
@@ -489,13 +491,11 @@ class TestToolCallDetail:
     def test_dataclass(self):
         from models import ToolCallDetail
         detail = ToolCallDetail(
-            tool_name='search_files',
             query='revenue growth',
             results_count=5,
             matched_files=['report.pdf', 'notes.txt'],
             duration_ms=42
         )
-        assert detail.tool_name == 'search_files'
         assert detail.query == 'revenue growth'
         assert detail.results_count == 5
         assert len(detail.matched_files) == 2
@@ -504,7 +504,6 @@ class TestToolCallDetail:
     def test_defaults(self):
         from models import ToolCallDetail
         detail = ToolCallDetail()
-        assert detail.tool_name == ''
         assert detail.matched_files == []
         assert detail.duration_ms == 0
 
