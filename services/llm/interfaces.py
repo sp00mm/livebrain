@@ -6,7 +6,7 @@ from typing import Callable, Generator, Optional
 @dataclass
 class Message:
     role: str
-    content: str
+    content: str | list[dict]
 
 
 @dataclass

@@ -1,9 +1,11 @@
 import os
+import struct
 import tempfile
+import zlib
 
 from models import (
     Brain, Question, Session, TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    Resource, ResourceType,
+    Resource, ResourceType, IndexStatus,
     QueryType, StepType, StepStatus, SpeakerType
 )
 from services.database import (
@@ -267,3 +269,84 @@ class TestGatherFileContext:
 
         for p in paths:
             os.unlink(p)
+
+
+class TestImageContent:
+    def _create_tiny_png(self, path):
+        sig = b'\x89PNG\r\n\x1a\n'
+        ihdr_data = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
+        ihdr_crc = zlib.crc32(b'IHDR' + ihdr_data) & 0xffffffff
+        ihdr = struct.pack('>I', 13) + b'IHDR' + ihdr_data + struct.pack('>I', ihdr_crc)
+        raw = b'\x00\x00\x00\x00'
+        compressed = zlib.compress(raw)
+        idat_crc = zlib.crc32(b'IDAT' + compressed) & 0xffffffff
+        idat = struct.pack('>I', len(compressed)) + b'IDAT' + compressed + struct.pack('>I', idat_crc)
+        iend_crc = zlib.crc32(b'IEND') & 0xffffffff
+        iend = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', iend_crc)
+        with open(path, 'wb') as f:
+            f.write(sig + ihdr + idat + iend)
+
+    def test_gather_image_content(self, db, tmp_path):
+        brain_repo = BrainRepository(db)
+        resource_repo = ResourceRepository(db)
+        brain = brain_repo.create(Brain(name='Test'))
+
+        png_path = str(tmp_path / 'photo.png')
+        self._create_tiny_png(png_path)
+
+        resource = Resource(
+            resource_type=ResourceType.FILE,
+            name='photo.png',
+            path=png_path,
+            index_status=IndexStatus.INDEXED
+        )
+        resource_repo.create(resource)
+        resource_repo.link_to_brain(resource.id, brain.id)
+
+        service = QueryExecutionService(db, MockEmbedder())
+        blocks, refs = service._gather_image_content(brain.id)
+        assert len(blocks) == 1
+        assert blocks[0]['type'] == 'input_image'
+        assert 'data:image/png;base64,' in blocks[0]['image_url']
+        assert len(refs) == 1
+        assert refs[0].display_name == 'photo.png'
+
+    def test_gather_image_skips_text(self, db, tmp_path):
+        brain_repo = BrainRepository(db)
+        resource_repo = ResourceRepository(db)
+        brain = brain_repo.create(Brain(name='Test'))
+
+        txt_path = str(tmp_path / 'notes.txt')
+        with open(txt_path, 'w') as f:
+            f.write('hello')
+
+        resource = Resource(
+            resource_type=ResourceType.FILE,
+            name='notes.txt',
+            path=txt_path,
+            index_status=IndexStatus.INDEXED
+        )
+        resource_repo.create(resource)
+        resource_repo.link_to_brain(resource.id, brain.id)
+
+        service = QueryExecutionService(db, MockEmbedder())
+        blocks, refs = service._gather_image_content(brain.id)
+        assert len(blocks) == 0
+        assert len(refs) == 0
+
+    def test_build_messages_with_images(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        from services.conversation import ConversationContext
+        conv = ConversationContext(session_id='s1', brain_id='b1')
+        image_blocks = [{'type': 'input_image', 'image_url': 'data:image/png;base64,abc'}]
+        messages = service._build_messages(conv, 'describe this', '', image_blocks)
+        assert isinstance(messages[-1].content, list)
+        assert messages[-1].content[0]['type'] == 'input_text'
+        assert messages[-1].content[1]['type'] == 'input_image'
+
+    def test_build_messages_without_images(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        from services.conversation import ConversationContext
+        conv = ConversationContext(session_id='s1', brain_id='b1')
+        messages = service._build_messages(conv, 'hello', '')
+        assert isinstance(messages[-1].content, str)

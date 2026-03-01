@@ -17,6 +17,8 @@ from ui.styles import (
 )
 from ui.threads import IndexThread, EstimateThread
 
+IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}
+
 
 class QuestionEditRow(QFrame):
     deleted = Signal(object)
@@ -91,7 +93,13 @@ class ResourceRow(QFrame):
         layout.setContentsMargins(10, 6, 6, 6)
         layout.setSpacing(8)
 
-        icon = 'mdi.folder' if resource.resource_type == ResourceType.FOLDER else 'mdi.file'
+        ext = os.path.splitext(resource.path)[1].lower()
+        if resource.resource_type == ResourceType.FOLDER:
+            icon = 'mdi.folder'
+        elif ext in IMAGE_EXTENSIONS:
+            icon = 'mdi.image'
+        else:
+            icon = 'mdi.file'
         icon_label = QLabel()
         icon_label.setPixmap(qta.icon(icon, color='#888').pixmap(16, 16))
         layout.addWidget(icon_label)
@@ -203,11 +211,21 @@ class BrainEditView(QWidget):
         self._resources_layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._resources_container)
 
+        add_r_row = QHBoxLayout()
         add_r_btn = QPushButton('+ Add files or folders')
         add_r_btn.setStyleSheet('background: transparent; border: none; color: #6eb5ff; text-align: left;')
         add_r_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_r_btn.clicked.connect(self._add_resource)
-        layout.addWidget(add_r_btn)
+        add_r_row.addWidget(add_r_btn)
+
+        add_image_btn = QPushButton('+ Add image')
+        add_image_btn.setStyleSheet('background: transparent; border: none; color: #6eb5ff; text-align: left;')
+        add_image_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_image_btn.clicked.connect(self._add_image)
+        add_r_row.addWidget(add_image_btn)
+
+        add_r_row.addStretch()
+        layout.addLayout(add_r_row)
 
         layout.addStretch()
 
@@ -341,6 +359,31 @@ class BrainEditView(QWidget):
         self._ensure_brain_saved()
         self._add_folder_resource(folder)
         self._load_resources()
+
+    def _add_image(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Select Image', '',
+            'Images (*.png *.jpg *.jpeg *.gif *.webp *.bmp)'
+        )
+        if not path:
+            return
+        self._ensure_brain_saved()
+        self._add_file_resource(path)
+        self._load_resources()
+        self._check_image_count_warning()
+
+    def _check_image_count_warning(self):
+        resources = self.resource_repo.get_by_brain(self._brain.id)
+        image_count = sum(
+            1 for r in resources
+            if r.resource_type == ResourceType.FILE
+            and os.path.splitext(r.path)[1].lower() in IMAGE_EXTENSIONS
+        )
+        if image_count >= 5:
+            QMessageBox.information(
+                self, 'Heads up',
+                f'You have {image_count} images attached. Each image uses a lot of tokens which affects cost.'
+            )
 
     def _add_folder_resource(self, path):
         resource = Resource(
