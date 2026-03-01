@@ -744,6 +744,13 @@ class ExecutionStepRepository:
         )
         return [self._row_to_step(row) for row in cursor.fetchall()]
 
+    def update_details(self, step_id: str, details: str) -> None:
+        self.conn.execute(
+            'UPDATE execution_steps SET details = ? WHERE id = ?',
+            [details, step_id]
+        )
+        self.conn.commit()
+
     def complete(self, step_id: str, status: StepStatus = StepStatus.COMPLETED) -> None:
         self.conn.execute("""
             UPDATE execution_steps SET status = ?, completed_at = ? WHERE id = ?

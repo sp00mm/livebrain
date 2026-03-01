@@ -1,3 +1,5 @@
+import json
+
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -48,18 +50,21 @@ class AuditFeedItem(QFrame):
 class AuditStepItem(QFrame):
     def __init__(self, step, parent=None):
         super().__init__(parent)
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 3, 10, 3)
-        layout.setSpacing(8)
+        layout.setSpacing(2)
 
         labels = {
             StepType.LISTENING: 'Listening to conversation',
             StepType.SEARCHING_FILES: 'Looking through files',
             StepType.GENERATING: 'Thinking...',
         }
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
         type_label = QLabel(labels[step.step_type])
         type_label.setStyleSheet(f'color: {AUDIT_STEP_COLOR}; font-size: 11px; font-style: italic;')
-        layout.addWidget(type_label, 1)
+        row.addWidget(type_label, 1)
 
         status_text = step.status.value
         if step.status == StepStatus.COMPLETED:
@@ -71,7 +76,18 @@ class AuditStepItem(QFrame):
         status = QLabel(status_text)
         color = TEXT_DIM if step.status == StepStatus.COMPLETED else '#ff6b6b'
         status.setStyleSheet(f'color: {color}; font-size: 10px;')
-        layout.addWidget(status)
+        row.addWidget(status)
+        layout.addLayout(row)
+
+        if step.step_type == StepType.SEARCHING_FILES and step.details:
+            details = json.loads(step.details)
+            q_label = QLabel(f'Search: "{details["query"]}"')
+            q_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px; padding-left: 4px;')
+            layout.addWidget(q_label)
+            f_label = QLabel(f'Found: {", ".join(details["matched_files"])}')
+            f_label.setWordWrap(True)
+            f_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px; padding-left: 4px;')
+            layout.addWidget(f_label)
 
 
 class AuditResponseItem(QFrame):

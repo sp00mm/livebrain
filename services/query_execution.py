@@ -152,6 +152,11 @@ class QueryExecutionService:
                 tool_duration = int((time.time() - tool_start) * 1000)
                 file_refs.extend(refs)
                 resource_ids.extend(res_ids)
+                details = json.dumps({
+                    'query': args['query'],
+                    'matched_files': [r.display_name for r in refs]
+                })
+                self._step_repo.update_details(step.id, details)
                 self._complete_step(step.id, callbacks.on_step)
 
                 callbacks.on_tool_call(ToolCallDetail(
