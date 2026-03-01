@@ -162,14 +162,18 @@ class FileReference:
     filepath: str = ''
     display_name: str = ''
     relevance_score: float = 0.0
+    source_meta: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             'resource_id': self.resource_id,
             'filepath': self.filepath,
             'display_name': self.display_name,
             'relevance_score': self.relevance_score
         }
+        if self.source_meta:
+            d['source_meta'] = self.source_meta
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'FileReference':
@@ -177,7 +181,8 @@ class FileReference:
             resource_id=data.get('resource_id', ''),
             filepath=data.get('filepath', ''),
             display_name=data.get('display_name', ''),
-            relevance_score=data.get('relevance_score', 0.0)
+            relevance_score=data.get('relevance_score', 0.0),
+            source_meta=data.get('source_meta')
         )
 
 

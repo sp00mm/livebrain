@@ -222,8 +222,10 @@ class QueryExecutionService:
             similarity = r['similarity']
             context_parts.append(json.dumps({
                 'source': resource.name,
+                'filepath': chunk.filepath,
                 'text': chunk.text,
-                'relevance': round(similarity, 3)
+                'relevance': round(similarity, 3),
+                'location': chunk.source_meta
             }))
             if resource.id not in seen:
                 seen.add(resource.id)
@@ -232,7 +234,8 @@ class QueryExecutionService:
                     resource_id=resource.id,
                     filepath=chunk.filepath,
                     display_name=resource.name,
-                    relevance_score=similarity
+                    relevance_score=similarity,
+                    source_meta=chunk.source_meta
                 ))
         return f'[{",".join(context_parts)}]', file_refs, used_resource_ids
 
@@ -324,11 +327,12 @@ class QueryExecutionService:
             sections.append(f'Reference documents:\n{file_context}')
 
         if source_names:
-            names_list = ', '.join(f'[{n}]' for n in source_names[:10])
+            names_list = ', '.join(source_names[:10])
             sections.append(
-                'When you reference information from a document, cite it inline '
-                f'using its name in brackets, e.g. {names_list}. '
-                'Only cite sources you actually used.'
+                'When citing information from documents, use markdown link format: '
+                '[key quote or phrase](source_name). '
+                f'Available sources: {names_list}. '
+                'Only cite sources you actually used. Keep citations natural and inline.'
             )
 
         sections.append(

@@ -108,11 +108,29 @@ class AnswerItem(QFrame):
     def _linkify_sources(self, html: str) -> str:
         if not self._file_refs:
             return html
-        for ref in self._file_refs:
-            escaped = re.escape(ref.display_name)
+        ref_map = {ref.display_name: ref for ref in self._file_refs}
+
+        def replace_href(match):
+            href = match.group(1)
+            text = match.group(2)
+            if href in ref_map:
+                ref = ref_map[href]
+                fragment = ''
+                if ref.source_meta and ref.source_meta.get('page'):
+                    fragment = f'#page={ref.source_meta["page"]}'
+                return f'<a href="file://{ref.filepath}{fragment}">{text}</a>'
+            return match.group(0)
+
+        html = re.sub(r'<a href="([^"]+)">([^<]+)</a>', replace_href, html)
+
+        for name, ref in ref_map.items():
+            escaped = re.escape(name)
             pattern = rf'(?<!["\w/])\[{escaped}\](?![(\w])'
-            replacement = f'<a href="file://{ref.filepath}">[{ref.display_name}]</a>'
-            html = re.sub(pattern, replacement, html)
+            fragment = ''
+            if ref.source_meta and ref.source_meta.get('page'):
+                fragment = f'#page={ref.source_meta["page"]}'
+            html = re.sub(pattern, f'<a href="file://{ref.filepath}{fragment}">[{name}]</a>', html)
+
         return html
 
     def _on_link_clicked(self, url: QUrl):

@@ -1,3 +1,4 @@
+import json
 import os
 import struct
 import tempfile
@@ -7,7 +8,7 @@ import pytest
 
 from models import (
     Brain, Question, Session, TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    Resource, ResourceType, IndexStatus,
+    FileReference, Resource, ResourceType, IndexStatus,
     QueryType, StepType, StepStatus, SpeakerType
 )
 from services.database import (
@@ -357,21 +358,85 @@ class TestSourceCitations:
         service = QueryExecutionService(db, MockEmbedder())
         brain = Brain(name='Test', description='helper')
         prompt = service._build_system_prompt(brain, '', ['report.pdf', 'notes.txt'])
-        assert '[report.pdf]' in prompt
-        assert '[notes.txt]' in prompt
-        assert 'cite it inline' in prompt
+        assert 'report.pdf' in prompt
+        assert 'notes.txt' in prompt
+        assert 'markdown link format' in prompt
 
     def test_system_prompt_without_source_names(self, db):
         service = QueryExecutionService(db, MockEmbedder())
         brain = Brain(name='Test', description='helper')
         prompt = service._build_system_prompt(brain, '')
-        assert 'cite it inline' not in prompt
+        assert 'markdown link format' not in prompt
 
     def test_system_prompt_with_none_source_names(self, db):
         service = QueryExecutionService(db, MockEmbedder())
         brain = Brain(name='Test', description='helper')
         prompt = service._build_system_prompt(brain, '', None)
-        assert 'cite it inline' not in prompt
+        assert 'markdown link format' not in prompt
+
+    def test_citation_rules_markdown_format(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test', description='helper')
+        prompt = service._build_system_prompt(brain, '', ['report.pdf', 'notes.txt'])
+        assert 'markdown link format' in prompt
+        assert '[key quote or phrase](source_name)' in prompt
+        assert 'Available sources: report.pdf, notes.txt' in prompt
+
+    def test_tool_results_include_source_meta(self, db):
+        brain_repo = BrainRepository(db)
+        resource_repo = ResourceRepository(db)
+        brain = brain_repo.create(Brain(name='Test'))
+
+        resource = resource_repo.create(Resource(
+            resource_type=ResourceType.FOLDER, name='docs', path='/tmp/docs'
+        ))
+        resource_repo.link_to_brain(resource.id, brain.id)
+
+        service = QueryExecutionService(db, MockEmbedder())
+        result, refs, res_ids = service._tool_search_files('test', [resource.id])
+        parsed = json.loads(result)
+        for item in parsed:
+            assert 'location' in item
+
+
+class TestFileReferenceSourceMeta:
+    def test_file_reference_with_source_meta(self):
+        ref = FileReference(
+            resource_id='r1', filepath='/tmp/report.pdf',
+            display_name='report.pdf', relevance_score=0.95,
+            source_meta={'page': 3}
+        )
+        d = ref.to_dict()
+        assert d['source_meta'] == {'page': 3}
+
+    def test_file_reference_without_source_meta(self):
+        ref = FileReference(
+            resource_id='r1', filepath='/tmp/report.pdf',
+            display_name='report.pdf', relevance_score=0.95
+        )
+        d = ref.to_dict()
+        assert 'source_meta' not in d
+
+    def test_file_reference_from_dict_with_source_meta(self):
+        data = {
+            'resource_id': 'r1',
+            'filepath': '/tmp/report.pdf',
+            'display_name': 'report.pdf',
+            'relevance_score': 0.95,
+            'source_meta': {'page': 5}
+        }
+        ref = FileReference.from_dict(data)
+        assert ref.source_meta == {'page': 5}
+
+    def test_file_reference_from_dict_without_source_meta(self):
+        data = {
+            'resource_id': 'r1',
+            'filepath': '/tmp/report.pdf',
+            'display_name': 'report.pdf',
+            'relevance_score': 0.95
+        }
+        ref = FileReference.from_dict(data)
+        assert ref.source_meta is None
 
 
 class TestRichSystemPrompt:
