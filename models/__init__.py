@@ -153,6 +153,9 @@ class Interaction:
     query_text: str = ''
     transcript_snapshot: list[str] = field(default_factory=list)
     resources_used: list[str] = field(default_factory=list)
+    system_prompt: Optional[str] = None
+    tools: Optional[list[dict]] = None
+    messages: Optional[list] = None
     created_at: datetime = field(default_factory=now)
 
 
@@ -208,6 +211,18 @@ class ExecutionStep:
     details: Optional[str] = None
     started_at: datetime = field(default_factory=now)
     completed_at: Optional[datetime] = None
+
+
+@dataclass
+class ToolCallRecord:
+    id: str = field(default_factory=generate_id)
+    interaction_id: str = ''
+    call_id: str = ''
+    tool_name: str = ''
+    arguments: dict = field(default_factory=dict)
+    result: Optional[str] = None
+    duration_ms: Optional[int] = None
+    created_at: datetime = field(default_factory=now)
 
 
 @dataclass

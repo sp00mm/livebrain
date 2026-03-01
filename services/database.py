@@ -16,8 +16,9 @@ import libsql
 from models import (
     Brain, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    UserSettings, FileReference, ChatFeedItem, SpeakerType, QueryType,
-    ResourceType, IndexStatus, StepType, StepStatus, FeedItemType
+    ToolCallRecord, UserSettings, FileReference, ChatFeedItem,
+    SpeakerType, QueryType, ResourceType, IndexStatus, StepType,
+    StepStatus, FeedItemType
 )
 
 
@@ -589,8 +590,9 @@ class InteractionRepository:
         self.conn.execute('''
             INSERT INTO interactions (id, session_id, brain_id, question_id,
                                      query_type, query_text, transcript_snapshot_json,
-                                     artifacts_used_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     artifacts_used_json, system_prompt, tools_json,
+                                     messages_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', [
             interaction.id,
             interaction.session_id,
@@ -600,6 +602,9 @@ class InteractionRepository:
             interaction.query_text,
             json.dumps(interaction.transcript_snapshot),
             json.dumps(interaction.resources_used),
+            interaction.system_prompt,
+            json.dumps(interaction.tools) if interaction.tools is not None else None,
+            json.dumps(interaction.messages) if interaction.messages is not None else None,
             _dt_to_str(interaction.created_at)
         ])
         self.conn.commit()
@@ -623,11 +628,17 @@ class InteractionRepository:
         self.conn.execute('''
             UPDATE interactions SET
                 transcript_snapshot_json = ?,
-                artifacts_used_json = ?
+                artifacts_used_json = ?,
+                system_prompt = ?,
+                tools_json = ?,
+                messages_json = ?
             WHERE id = ?
         ''', [
             json.dumps(interaction.transcript_snapshot),
             json.dumps(interaction.resources_used),
+            interaction.system_prompt,
+            json.dumps(interaction.tools) if interaction.tools is not None else None,
+            json.dumps(interaction.messages) if interaction.messages is not None else None,
             interaction.id
         ])
         self.conn.commit()
@@ -643,7 +654,10 @@ class InteractionRepository:
             query_text=row[5],
             transcript_snapshot=json.loads(row[6]) if row[6] else [],
             resources_used=json.loads(row[7]) if row[7] else [],
-            created_at=_str_to_dt(row[8])
+            system_prompt=row[8],
+            tools=json.loads(row[9]) if row[9] else None,
+            messages=json.loads(row[10]) if row[10] else None,
+            created_at=_str_to_dt(row[11])
         )
 
 
@@ -766,6 +780,53 @@ class ExecutionStepRepository:
             details=row[4],
             started_at=_str_to_dt(row[5]),
             completed_at=_str_to_dt(row[6])
+        )
+
+
+# =============================================================================
+# Repository: ToolCalls
+# =============================================================================
+
+class ToolCallRepository:
+    def __init__(self, db: Database):
+        self.db = db
+        self.conn = db.conn
+
+    def create(self, record: ToolCallRecord) -> ToolCallRecord:
+        self.conn.execute('''
+            INSERT INTO tool_calls (id, interaction_id, call_id, tool_name,
+                                    arguments_json, result, duration_ms, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [
+            record.id,
+            record.interaction_id,
+            record.call_id,
+            record.tool_name,
+            json.dumps(record.arguments),
+            record.result,
+            record.duration_ms,
+            _dt_to_str(record.created_at)
+        ])
+        self.conn.commit()
+        return record
+
+    def get_by_interaction(self, interaction_id: str) -> list[ToolCallRecord]:
+        cursor = self.conn.execute(
+            'SELECT * FROM tool_calls WHERE interaction_id = ? ORDER BY created_at',
+            [interaction_id]
+        )
+        return [self._row_to_record(row) for row in cursor.fetchall()]
+
+    def _row_to_record(self, row) -> ToolCallRecord:
+        return ToolCallRecord(
+            id=row[0],
+            interaction_id=row[1],
+            call_id=row[2],
+            tool_name=row[3],
+            arguments=json.loads(row[4]),
+            result=row[5],
+            duration_ms=row[6],
+            created_at=_str_to_dt(row[7])
         )
 
 

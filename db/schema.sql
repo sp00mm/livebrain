@@ -108,12 +108,28 @@ CREATE TABLE IF NOT EXISTS interactions (
     query_text TEXT NOT NULL,
     transcript_snapshot_json TEXT,
     artifacts_used_json TEXT,
+    system_prompt TEXT,
+    tools_json TEXT,
+    messages_json TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (brain_id) REFERENCES brains(id),
     FOREIGN KEY (question_id) REFERENCES questions(id)
 );
 CREATE INDEX IF NOT EXISTS idx_interactions_session ON interactions(session_id);
+
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id TEXT PRIMARY KEY,
+    interaction_id TEXT NOT NULL,
+    call_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    arguments_json TEXT NOT NULL,
+    result TEXT,
+    duration_ms INTEGER,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (interaction_id) REFERENCES interactions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_interaction ON tool_calls(interaction_id);
 
 CREATE TABLE IF NOT EXISTS ai_responses (
     id TEXT PRIMARY KEY,

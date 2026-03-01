@@ -6,14 +6,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models import (
     Brain, Question, Resource, DocumentChunk, Session,
     TranscriptEntry, Interaction, AIResponse, ExecutionStep,
-    FileReference, ChatFeedItem, SpeakerType, QueryType, ResourceType,
-    IndexStatus, StepType, StepStatus, FeedItemType
+    ToolCallRecord, FileReference, ChatFeedItem, SpeakerType, QueryType,
+    ResourceType, IndexStatus, StepType, StepStatus, FeedItemType
 )
 from services.database import (
     BrainRepository, QuestionRepository, ResourceRepository,
     DocumentChunkRepository, SessionRepository, TranscriptEntryRepository,
     InteractionRepository, AIResponseRepository, ExecutionStepRepository,
-    UserSettingsRepository, ChatFeedItemRepository, RAGService
+    ToolCallRepository, UserSettingsRepository, ChatFeedItemRepository,
+    RAGService
 )
 
 
@@ -385,6 +386,125 @@ class TestInteractionRepository:
         fetched = interaction_repo.get(interaction.id)
         assert fetched.question_id == question.id
         assert fetched.query_type == QueryType.PRESET
+
+    def test_interaction_with_trace_data(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        session_repo = SessionRepository(db)
+        session = session_repo.create(Session(name='Test'))
+
+        interaction_repo = InteractionRepository(db)
+        tools = [{'type': 'function', 'name': 'search_files'}]
+        messages = [{'role': 'user', 'content': 'hello'}]
+        interaction = Interaction(
+            session_id=session.id,
+            brain_id=brain.id,
+            query_type=QueryType.FREEFORM,
+            query_text='Test',
+            system_prompt='You are a helpful assistant.',
+            tools=tools,
+            messages=messages
+        )
+        interaction_repo.create(interaction)
+
+        fetched = interaction_repo.get(interaction.id)
+        assert fetched.system_prompt == 'You are a helpful assistant.'
+        assert fetched.tools == tools
+        assert fetched.messages == messages
+
+    def test_interaction_trace_data_none_by_default(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        session_repo = SessionRepository(db)
+        session = session_repo.create(Session(name='Test'))
+
+        interaction_repo = InteractionRepository(db)
+        interaction = Interaction(
+            session_id=session.id,
+            brain_id=brain.id,
+            query_type=QueryType.FREEFORM,
+            query_text='Test'
+        )
+        interaction_repo.create(interaction)
+
+        fetched = interaction_repo.get(interaction.id)
+        assert fetched.system_prompt is None
+        assert fetched.tools is None
+        assert fetched.messages is None
+
+
+class TestToolCallRepository:
+
+    def test_create_tool_call(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        session_repo = SessionRepository(db)
+        session = session_repo.create(Session(name='Test'))
+
+        interaction_repo = InteractionRepository(db)
+        interaction = interaction_repo.create(Interaction(
+            session_id=session.id,
+            brain_id=brain.id,
+            query_type=QueryType.FREEFORM,
+            query_text='Test'
+        ))
+
+        repo = ToolCallRepository(db)
+        record = ToolCallRecord(
+            interaction_id=interaction.id,
+            call_id='call_abc123',
+            tool_name='search_files',
+            arguments={'query': 'vacation policy'},
+            result='Found 3 results',
+            duration_ms=150
+        )
+        created = repo.create(record)
+
+        assert created.id == record.id
+        assert created.tool_name == 'search_files'
+        assert created.arguments == {'query': 'vacation policy'}
+
+    def test_get_by_interaction(self, db):
+        brain_repo = BrainRepository(db)
+        brain = brain_repo.create(Brain(name='Test Brain'))
+
+        session_repo = SessionRepository(db)
+        session = session_repo.create(Session(name='Test'))
+
+        interaction_repo = InteractionRepository(db)
+        interaction = interaction_repo.create(Interaction(
+            session_id=session.id,
+            brain_id=brain.id,
+            query_type=QueryType.FREEFORM,
+            query_text='Test'
+        ))
+
+        repo = ToolCallRepository(db)
+        repo.create(ToolCallRecord(
+            interaction_id=interaction.id,
+            call_id='call_1',
+            tool_name='search_files',
+            arguments={'query': 'test'}
+        ))
+        repo.create(ToolCallRecord(
+            interaction_id=interaction.id,
+            call_id='call_2',
+            tool_name='read_file',
+            arguments={'path': '/docs/test.txt'},
+            result='file contents here',
+            duration_ms=50
+        ))
+
+        records = repo.get_by_interaction(interaction.id)
+
+        assert len(records) == 2
+        assert records[0].tool_name == 'search_files'
+        assert records[1].tool_name == 'read_file'
+        assert records[1].result == 'file contents here'
+        assert records[1].duration_ms == 50
 
 
 class TestAIResponseRepository:
