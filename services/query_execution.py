@@ -144,9 +144,16 @@ class QueryExecutionService:
 
             for tc in llm_response.tool_calls:
                 step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
-                result, refs, res_ids = self._execute_tool(tc.name, json.loads(tc.arguments), folder_ids)
+                tc_args = json.loads(tc.arguments)
+                result, refs, res_ids = self._execute_tool(tc.name, tc_args, folder_ids)
                 file_refs.extend(refs)
                 resource_ids.extend(res_ids)
+                details = json.dumps({
+                    'tool': tc.name,
+                    'query': tc_args.get('query', ''),
+                    'matched_files': [r.display_name for r in refs]
+                })
+                self._step_repo.update_details(step.id, details)
                 self._complete_step(step.id, callbacks.on_step)
 
                 extra_input.append({
