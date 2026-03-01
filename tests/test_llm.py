@@ -1,4 +1,4 @@
-from services.llm import Message, LLMResponse, LLMProvider, StreamCallback, LLMService
+from services.llm import Message, LLMResponse, LLMProvider, StreamCallback, LLMService, ToolCall
 from services.llm.service import DEFAULT_MODEL
 
 
@@ -47,3 +47,24 @@ class TestLLMService:
 
     def test_default_model(self):
         assert DEFAULT_MODEL == 'gpt-5-chat-latest'
+
+
+class TestToolCall:
+    def test_dataclass(self):
+        tc = ToolCall(call_id='call_1', name='search_files', arguments='{"query": "test"}')
+        assert tc.call_id == 'call_1'
+        assert tc.name == 'search_files'
+        assert tc.arguments == '{"query": "test"}'
+
+
+class TestLLMResponseWithToolCalls:
+    def test_empty_tool_calls(self):
+        resp = LLMResponse(text='hello', model='gpt-4o')
+        assert resp.tool_calls == []
+        assert resp.output_items == []
+
+    def test_with_tool_calls(self):
+        tc = ToolCall(call_id='call_1', name='search_files', arguments='{}')
+        resp = LLMResponse(text='', model='gpt-4o', tool_calls=[tc])
+        assert len(resp.tool_calls) == 1
+        assert resp.tool_calls[0].name == 'search_files'

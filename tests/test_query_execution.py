@@ -372,3 +372,39 @@ class TestSourceCitations:
         brain = Brain(name='Test', description='helper')
         prompt = service._build_system_prompt(brain, '', None)
         assert 'cite' not in prompt
+
+
+class TestToolExecution:
+    def test_build_tools_with_folders(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        tools = service._build_tools(['folder-1', 'folder-2'])
+        names = [t.get('name') for t in tools if t.get('name')]
+        assert 'search_files' in names
+        assert any(t['type'] == 'web_search' for t in tools)
+
+    def test_build_tools_without_folders(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        tools = service._build_tools([])
+        names = [t.get('name') for t in tools if t.get('name')]
+        assert 'search_files' not in names
+        assert any(t['type'] == 'web_search' for t in tools)
+
+    def test_execute_tool_search_files(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        result, refs, res_ids = service._tool_search_files('test query', [])
+        assert isinstance(result, str)
+        assert isinstance(refs, list)
+        assert isinstance(res_ids, list)
+
+    def test_execute_tool_unknown(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        import pytest
+        with pytest.raises(ValueError, match='Unknown tool'):
+            service._execute_tool('nonexistent_tool', {}, [])
+
+    def test_build_messages_simplified(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        conv = ConversationContext(session_id='s1', brain_id='b1')
+        messages = service._build_messages(conv, 'hello')
+        assert messages[-1].content == 'hello'
+        assert messages[-1].role == 'user'
