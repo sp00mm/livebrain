@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QTextEdit, QLabel, QScrollArea, QFrame,
-    QSizePolicy, QFileDialog, QMessageBox, QMenu
+    QSizePolicy, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -212,18 +212,22 @@ class BrainEditView(QWidget):
         layout.addWidget(self._resources_container)
 
         add_r_row = QHBoxLayout()
-        add_r_btn = QPushButton('+ Add files or folders')
-        add_r_btn.setStyleSheet('background: transparent; border: none; color: #6eb5ff; text-align: left;')
-        add_r_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_r_btn.clicked.connect(self._add_resource)
-        add_r_row.addWidget(add_r_btn)
-
+        add_r_row.setContentsMargins(0, 0, 0, 0)
+        add_file_btn = QPushButton('+ Add files')
+        add_file_btn.setStyleSheet('background: transparent; border: none; color: #6eb5ff; text-align: left;')
+        add_file_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_file_btn.clicked.connect(self._add_files)
+        add_r_row.addWidget(add_file_btn)
+        add_folder_btn = QPushButton('+ Add folder')
+        add_folder_btn.setStyleSheet('background: transparent; border: none; color: #6eb5ff; text-align: left;')
+        add_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_folder_btn.clicked.connect(self._add_folder)
+        add_r_row.addWidget(add_folder_btn)
         add_image_btn = QPushButton('+ Add image')
         add_image_btn.setStyleSheet('background: transparent; border: none; color: #6eb5ff; text-align: left;')
         add_image_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_image_btn.clicked.connect(self._add_image)
         add_r_row.addWidget(add_image_btn)
-
         add_r_row.addStretch()
         layout.addLayout(add_r_row)
 
@@ -335,13 +339,6 @@ class BrainEditView(QWidget):
         self._brain.description = self._desc_input.toPlainText().strip()
         self.brain_repo.create(self._brain)
         self._is_new = False
-
-    def _add_resource(self):
-        menu = QMenu(self)
-        menu.addAction('Add Files', self._add_files)
-        menu.addAction('Add Folder', self._add_folder)
-        btn = self.sender()
-        menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
 
     def _add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(self, 'Select Files')
