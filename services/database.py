@@ -932,7 +932,7 @@ class RAGService:
                     end_char=end,
                     text=chunk_text,
                     embedding=embedding_fn(chunk_text),
-                    source_meta=meta or None
+                    source_meta=meta if meta else None
                 ))
                 chunk_index += 1
 

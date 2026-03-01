@@ -41,7 +41,7 @@ class IndexThread(QThread):
             self.file_progress.emit(os.path.basename(filepath), i + 1, len(self.paths))
             total_bytes += os.path.getsize(filepath)
             segments = self.scanner.extract_text_with_meta(filepath)
-            segments = [(text, meta) for text, meta in segments if text and text.strip()]
+            segments = [(text, meta) for text, meta in segments if text.strip()]
             if segments:
                 self.rag.index_text_with_meta(
                     resource_id=self.resource.id,

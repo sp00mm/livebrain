@@ -40,9 +40,7 @@ class FileScanner:
 
     def extract_text(self, filepath):
         segments = self.extract_text_with_meta(filepath)
-        if not segments:
-            return None
-        return '\n'.join(text for text, _ in segments)
+        return '\n'.join(text for text, _ in segments) or None
 
     def extract_text_with_meta(self, filepath) -> list[tuple[str, dict]]:
         ext = os.path.splitext(filepath)[1].lower()
@@ -59,7 +57,7 @@ class FileScanner:
         gitignore_path = os.path.join(directory, '.gitignore')
         if os.path.isfile(gitignore_path):
             with open(gitignore_path, 'r') as f:
-                specs.append(pathspec.PathSpec.from_lines('gitwildmatch', f))
+                specs.append(pathspec.PathSpec.from_lines('gitignore', f))
 
         for root, dirs, filenames in os.walk(directory):
             dirs[:] = [d for d in dirs if d not in self.SKIP_DIRS]
@@ -67,7 +65,7 @@ class FileScanner:
             nested_gitignore = os.path.join(root, '.gitignore')
             if root != directory and os.path.isfile(nested_gitignore):
                 with open(nested_gitignore, 'r') as f:
-                    specs.append(pathspec.PathSpec.from_lines('gitwildmatch', f))
+                    specs.append(pathspec.PathSpec.from_lines('gitignore', f))
 
             for filename in filenames:
                 if filename in self.SKIP_FILES:
@@ -101,7 +99,7 @@ class FileScanner:
         from docx import Document
         doc = Document(filepath)
         text = '\n'.join(p.text for p in doc.paragraphs)
-        return [(text, {'page': 1})]
+        return [(text, {})]
 
     def _extract_xlsx_with_meta(self, filepath):
         from openpyxl import load_workbook
