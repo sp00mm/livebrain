@@ -155,6 +155,15 @@ class LiveView(QWidget):
         )
         header.addWidget(history_btn)
 
+        audit_btn = QPushButton()
+        audit_btn.setObjectName('iconBtn')
+        audit_btn.setIcon(qta.icon('mdi.format-list-bulleted', color='#888888'))
+        audit_btn.setFixedSize(24, 24)
+        audit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        audit_btn.setToolTip('Session audit')
+        audit_btn.clicked.connect(self._show_audit)
+        header.addWidget(audit_btn)
+
         settings_btn = QPushButton()
         settings_btn.setObjectName('iconBtn')
         settings_btn.setIcon(qta.icon('mdi.cog', color='#888888'))
@@ -168,6 +177,16 @@ class LiveView(QWidget):
     def _edit_current_brain(self):
         if self._active_brain:
             self.navigate_to_brain_edit.emit(self._active_brain.id)
+
+    def _show_audit(self):
+        if not self._session:
+            return
+        from ui.widgets.audit_view import AuditWindow
+        if hasattr(self, '_audit_window') and self._audit_window.isVisible():
+            self._audit_window.raise_()
+            return
+        self._audit_window = AuditWindow(self._session.id, self.app.db)
+        self._audit_window.show()
 
     def set_detached(self, detached: bool):
         if detached:
