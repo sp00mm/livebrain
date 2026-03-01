@@ -19,16 +19,18 @@ class LLMService:
 
     def complete(self, messages: list[Message],
                  system_prompt: Optional[str] = None,
-                 tools: Optional[list[dict]] = None) -> LLMResponse:
+                 tools: Optional[list[dict]] = None,
+                 extra_input: Optional[list[dict]] = None) -> LLMResponse:
         provider = self.get_provider('openai')
-        return provider.complete(messages, DEFAULT_MODEL, system_prompt, tools)
+        return provider.complete(messages, DEFAULT_MODEL, system_prompt, tools, extra_input)
 
     def stream(self, messages: list[Message],
                system_prompt: Optional[str] = None,
                on_delta: Optional[StreamCallback] = None,
-               tools: Optional[list[dict]] = None) -> Generator[str, None, LLMResponse]:
+               tools: Optional[list[dict]] = None,
+               extra_input: Optional[list[dict]] = None) -> Generator[str, None, LLMResponse]:
         provider = self.get_provider('openai')
-        return provider.stream(messages, DEFAULT_MODEL, system_prompt, on_delta, tools)
+        return provider.stream(messages, DEFAULT_MODEL, system_prompt, on_delta, tools, extra_input)
 
     def _create_provider(self, name: str) -> LLMProvider:
         api_key = self._get_api_key()

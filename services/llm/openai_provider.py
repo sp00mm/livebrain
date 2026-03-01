@@ -2,7 +2,7 @@ from typing import Generator, Optional
 
 from openai import OpenAI
 
-from .interfaces import LLMProvider, Message, LLMResponse, StreamCallback
+from .interfaces import LLMProvider, Message, LLMResponse, StreamCallback, ToolCall
 
 
 class OpenAIProvider(LLMProvider):
@@ -11,10 +11,11 @@ class OpenAIProvider(LLMProvider):
 
     def complete(self, messages: list[Message], model: str,
                  system_prompt: Optional[str] = None,
-                 tools: Optional[list[dict]] = None) -> LLMResponse:
+                 tools: Optional[list[dict]] = None,
+                 extra_input: Optional[list[dict]] = None) -> LLMResponse:
         kwargs = {
             'model': model,
-            'input': self._build_input(messages),
+            'input': self._build_input(messages) + (extra_input or []),
             'instructions': system_prompt,
         }
         if tools:
@@ -30,10 +31,11 @@ class OpenAIProvider(LLMProvider):
     def stream(self, messages: list[Message], model: str,
                system_prompt: Optional[str] = None,
                on_delta: Optional[StreamCallback] = None,
-               tools: Optional[list[dict]] = None) -> Generator[str, None, LLMResponse]:
+               tools: Optional[list[dict]] = None,
+               extra_input: Optional[list[dict]] = None) -> Generator[str, None, LLMResponse]:
         kwargs = {
             'model': model,
-            'input': self._build_input(messages),
+            'input': self._build_input(messages) + (extra_input or []),
             'instructions': system_prompt,
             'stream': True,
         }
@@ -42,21 +44,47 @@ class OpenAIProvider(LLMProvider):
         stream = self._client.responses.create(**kwargs)
         full_text = ''
         usage = None
+        tool_calls = {}
+        output_items = []
+
         for event in stream:
             if event.type == 'response.output_text.delta':
                 full_text += event.delta
                 yield event.delta
                 if on_delta:
                     on_delta(event.delta, False)
+
+            elif event.type == 'response.output_item.added':
+                if getattr(event.item, 'type', None) == 'function_call':
+                    tool_calls[event.item.id] = ToolCall(
+                        call_id=event.item.call_id,
+                        name=event.item.name,
+                        arguments=''
+                    )
+
+            elif event.type == 'response.function_call_arguments.delta':
+                if event.item_id in tool_calls:
+                    tool_calls[event.item_id].arguments += event.delta
+
+            elif event.type == 'response.function_call_arguments.done':
+                if event.item_id in tool_calls:
+                    tool_calls[event.item_id].arguments = event.arguments
+
+            elif event.type == 'response.output_item.done':
+                output_items.append(event.item)
+
             elif event.type == 'response.completed':
                 usage = getattr(event.response, 'usage', None)
                 if on_delta:
                     on_delta('', True)
+
         return LLMResponse(
             text=full_text,
             model=model,
             tokens_input=usage.input_tokens if usage else 0,
-            tokens_output=usage.output_tokens if usage else 0
+            tokens_output=usage.output_tokens if usage else 0,
+            tool_calls=list(tool_calls.values()),
+            output_items=output_items
         )
 
     def _build_input(self, messages: list[Message]) -> list[dict]:
