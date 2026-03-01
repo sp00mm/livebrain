@@ -13,7 +13,7 @@ from services.database import (
     AIResponseRepository, ChatFeedItemRepository
 )
 from ui.styles import (
-    STYLE_SHEET, BG_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM,
+    STYLE_SHEET, BG_PRIMARY, BG_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM,
     FEED_QUESTION_BG, FEED_ANSWER_FADED,
     AUDIT_STEP_COLOR
 )
@@ -117,7 +117,7 @@ class AuditWindow(QWidget):
         self.setWindowFlags(Qt.WindowType.Window)
         self.setFixedSize(600, 700)
         self.setWindowTitle('Session Audit')
-        self.setStyleSheet(STYLE_SHEET)
+        self.setStyleSheet(STYLE_SHEET + f'\nQWidget {{ background-color: {BG_PRIMARY}; }}')
 
         self._feed_repo = ChatFeedItemRepository(db)
         self._interaction_repo = InteractionRepository(db)

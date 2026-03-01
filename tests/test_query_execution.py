@@ -3,20 +3,23 @@ import os
 import struct
 import tempfile
 import zlib
+from unittest.mock import patch, MagicMock
 
 import pytest
 
 from models import (
     Brain, Question, Session, TranscriptEntry, Interaction, AIResponse, ExecutionStep,
     FileReference, Resource, ResourceType, IndexStatus,
-    QueryType, StepType, StepStatus, SpeakerType
+    QueryType, StepType, StepStatus, SpeakerType, ToolCallRecord
 )
 from services.database import (
     BrainRepository, QuestionRepository, SessionRepository,
-    TranscriptEntryRepository, InteractionRepository, ResourceRepository
+    TranscriptEntryRepository, InteractionRepository, ResourceRepository,
+    ToolCallRepository
 )
 from services.query_execution import QueryExecutionService, QueryContext, ExecutionCallbacks
 from services.conversation import ConversationContext
+from services.llm import LLMResponse, ToolCall
 
 
 class MockEmbedder:
@@ -541,3 +544,86 @@ class TestToolExecution:
         messages = service._build_messages(conv, 'hello')
         assert messages[-1].content == 'hello'
         assert messages[-1].role == 'user'
+
+
+def _fake_stream_no_tools(*args, **kwargs):
+    yield ''
+    return LLMResponse(text='answer', model='test-model', tokens_input=10, tokens_output=5)
+
+
+def _fake_stream_with_tool_call(*args, **kwargs):
+    call_count = getattr(_fake_stream_with_tool_call, '_call_count', 0)
+    _fake_stream_with_tool_call._call_count = call_count + 1
+    if call_count == 0:
+        yield ''
+        output_item = MagicMock()
+        output_item.model_dump.return_value = {'type': 'function_call', 'name': 'search_files'}
+        return LLMResponse(
+            text='', model='test-model', tokens_input=5, tokens_output=3,
+            tool_calls=[ToolCall(call_id='tc-1', name='search_files', arguments='{"query": "test"}')],
+            output_items=[output_item]
+        )
+    else:
+        yield ''
+        return LLMResponse(text='found it', model='test-model', tokens_input=8, tokens_output=4)
+
+
+class TestExecutionTrace:
+    def _setup(self, db):
+        brain_repo = BrainRepository(db)
+        session_repo = SessionRepository(db)
+        brain = brain_repo.create(Brain(name='Test'))
+        session = session_repo.create(Session(name='Session'))
+        return brain, session
+
+    def _callbacks(self):
+        return ExecutionCallbacks(
+            on_step=lambda s: None,
+            on_delta=lambda d: None,
+            on_complete=lambda r: None,
+            on_tool_call=lambda d: None
+        )
+
+    @patch.object(QueryExecutionService, '_gather_file_context', return_value='')
+    @patch.object(QueryExecutionService, '_gather_image_content', return_value=([], []))
+    def test_persists_system_prompt_tools_messages(self, mock_img, mock_fc, db):
+        brain, session = self._setup(db)
+        service = QueryExecutionService(db, MockEmbedder())
+        service._llm = MagicMock()
+        service._llm.stream = _fake_stream_no_tools
+
+        ctx = QueryContext(session_id=session.id, brain=brain, query_text='hello')
+        service.execute(ctx, self._callbacks())
+
+        interaction_repo = InteractionRepository(db)
+        interactions = interaction_repo.get_by_session(session.id)
+        interaction = interactions[0]
+        assert interaction.system_prompt is not None
+        assert 'LiveBrain' in interaction.system_prompt
+        assert interaction.tools is not None
+        assert isinstance(interaction.tools, list)
+        assert interaction.messages is not None
+        assert any(m['content'] == 'hello' for m in interaction.messages)
+
+    @patch.object(QueryExecutionService, '_gather_file_context', return_value='')
+    @patch.object(QueryExecutionService, '_gather_image_content', return_value=([], []))
+    def test_persists_tool_call_records(self, mock_img, mock_fc, db):
+        brain, session = self._setup(db)
+        service = QueryExecutionService(db, MockEmbedder())
+        service._llm = MagicMock()
+        _fake_stream_with_tool_call._call_count = 0
+        service._llm.stream = _fake_stream_with_tool_call
+
+        ctx = QueryContext(session_id=session.id, brain=brain, query_text='search something')
+        service.execute(ctx, self._callbacks())
+
+        interaction_repo = InteractionRepository(db)
+        tool_call_repo = ToolCallRepository(db)
+        interactions = interaction_repo.get_by_session(session.id)
+        interaction = interactions[0]
+        records = tool_call_repo.get_by_interaction(interaction.id)
+        assert len(records) == 1
+        assert records[0].call_id == 'tc-1'
+        assert records[0].tool_name == 'search_files'
+        assert records[0].arguments == {'query': 'test'}
+        assert records[0].duration_ms is not None

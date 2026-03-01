@@ -8,13 +8,13 @@ import time
 
 from models import (
     Brain, Interaction, AIResponse, ExecutionStep, FileReference,
-    TranscriptEntry, QueryType, StepType, StepStatus, ResourceType,
-    ToolCallDetail
+    TranscriptEntry, ToolCallRecord, QueryType, StepType, StepStatus,
+    ResourceType, ToolCallDetail
 )
 from services.database import (
     Database, QuestionRepository,
     InteractionRepository, AIResponseRepository, ExecutionStepRepository,
-    RAGService, ResourceRepository
+    ToolCallRepository, RAGService, ResourceRepository
 )
 from services.llm import LLMService, Message
 from services.scanner import FileScanner
@@ -73,6 +73,7 @@ class QueryExecutionService:
         self._response_repo = AIResponseRepository(db)
         self._step_repo = ExecutionStepRepository(db)
         self._resource_repo = ResourceRepository(db)
+        self._tool_call_repo = ToolCallRepository(db)
         self._llm = LLMService(db)
         self._rag = RAGService(db)
 
@@ -97,14 +98,15 @@ class QueryExecutionService:
         file_tree = self._build_file_tree(folder_resources)
 
         interaction.transcript_snapshot = transcript_ids
-        self._interaction_repo.update(interaction)
 
         file_context = self._gather_file_context(ctx.brain.id)
         image_blocks, image_refs = self._gather_image_content(ctx.brain.id)
         file_refs.extend(image_refs)
 
         tools = self._build_tools(folder_ids)
+        interaction.tools = tools
         messages = self._build_messages(conversation, ctx.query_text, image_blocks)
+        interaction.messages = [{'role': m.role, 'content': m.content} for m in messages]
 
         extra_input = []
         total_input_tokens = 0
@@ -119,6 +121,7 @@ class QueryExecutionService:
                 ctx.brain, file_context, source_names or None,
                 file_tree=file_tree, has_folders=bool(folder_ids)
             )
+            interaction.system_prompt = system_prompt
 
             step = self._emit_step(interaction.id, StepType.GENERATING, callbacks.on_step)
 
@@ -163,6 +166,15 @@ class QueryExecutionService:
                     query=args['query'],
                     results_count=len(refs),
                     matched_files=[r.display_name for r in refs],
+                    duration_ms=tool_duration
+                ))
+
+                self._tool_call_repo.create(ToolCallRecord(
+                    interaction_id=interaction.id,
+                    call_id=tc.call_id,
+                    tool_name=tc.name,
+                    arguments=args,
+                    result=result,
                     duration_ms=tool_duration
                 ))
 
