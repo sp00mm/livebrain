@@ -90,7 +90,13 @@ class QueryExecutionService:
         file_context = self._gather_file_context(ctx.brain.id)
         image_blocks, image_refs = self._gather_image_content(ctx.brain.id)
         file_refs.extend(image_refs)
-        system_prompt = self._build_system_prompt(ctx.brain, file_context)
+
+        source_names = list(dict.fromkeys(
+            [ref.display_name for ref in file_refs]
+            + [r.name for r in linked_resources if r.resource_type == ResourceType.FILE]
+        ))
+
+        system_prompt = self._build_system_prompt(ctx.brain, file_context, source_names or None)
         messages = self._build_messages(conversation, ctx.query_text, rag_context, image_blocks)
 
         step = self._emit_step(interaction.id, StepType.GENERATING, callbacks.on_step)
@@ -228,7 +234,8 @@ class QueryExecutionService:
             ))
         return blocks, refs
 
-    def _build_system_prompt(self, brain: Brain, file_context: str = '') -> str:
+    def _build_system_prompt(self, brain: Brain, file_context: str = '',
+                             source_names: list[str] = None) -> str:
         if brain.system_prompt:
             prompt = brain.system_prompt
         else:
@@ -239,4 +246,13 @@ class QueryExecutionService:
 
         if file_context:
             prompt += '\n\nHere are reference documents for this brain:\n' + file_context
+
+        if source_names:
+            names_list = ', '.join(f'[{n}]' for n in source_names)
+            prompt += (
+                '\n\nWhen you reference information from a specific document, '
+                f'cite it inline using its filename in brackets, e.g. {names_list}. '
+                'Only cite sources you actually used.'
+            )
+
         return prompt

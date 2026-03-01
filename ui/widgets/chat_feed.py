@@ -1,8 +1,12 @@
+import re
+import subprocess
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QScrollArea,
-    QFrame, QSizePolicy, QTextBrowser
+    QFrame, QSizePolicy, QTextBrowser, QApplication
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 
 from models import FeedItemType
 from ui.styles import (
@@ -74,6 +78,7 @@ class AnswerItem(QFrame):
 
         self._browser = QTextBrowser()
         self._browser.setOpenExternalLinks(False)
+        self._browser.anchorClicked.connect(self._on_link_clicked)
         self._browser.setFrameShape(QFrame.Shape.NoFrame)
         self._browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -96,8 +101,30 @@ class AnswerItem(QFrame):
         self._faded = True
         self._file_refs = file_refs or []
         html = render_markdown(self._text)
+        html = self._linkify_sources(html)
         self._browser.setHtml(self._wrap_html(html))
         self._adjust_height()
+
+    def _linkify_sources(self, html: str) -> str:
+        if not self._file_refs:
+            return html
+        for ref in self._file_refs:
+            escaped = re.escape(ref.display_name)
+            pattern = rf'(?<!["\w/])\[{escaped}\](?![(\w])'
+            replacement = f'<a href="file://{ref.filepath}">[{ref.display_name}]</a>'
+            html = re.sub(pattern, replacement, html)
+        return html
+
+    def _on_link_clicked(self, url: QUrl):
+        path = url.toLocalFile()
+        if not path:
+            QDesktopServices.openUrl(url)
+            return
+        modifiers = QApplication.keyboardModifiers()
+        if modifiers & Qt.KeyboardModifier.MetaModifier:
+            subprocess.Popen(['open', '-R', path])
+        else:
+            subprocess.Popen(['open', path])
 
     def set_text(self, text: str):
         self._text = text

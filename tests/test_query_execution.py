@@ -350,3 +350,25 @@ class TestImageContent:
         conv = ConversationContext(session_id='s1', brain_id='b1')
         messages = service._build_messages(conv, 'hello', '')
         assert isinstance(messages[-1].content, str)
+
+
+class TestSourceCitations:
+    def test_system_prompt_with_source_names(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test', description='helper')
+        prompt = service._build_system_prompt(brain, '', ['report.pdf', 'notes.txt'])
+        assert '[report.pdf]' in prompt
+        assert '[notes.txt]' in prompt
+        assert 'cite it inline' in prompt
+
+    def test_system_prompt_without_source_names(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test', description='helper')
+        prompt = service._build_system_prompt(brain, '')
+        assert 'cite' not in prompt
+
+    def test_system_prompt_with_none_source_names(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test', description='helper')
+        prompt = service._build_system_prompt(brain, '', None)
+        assert 'cite' not in prompt

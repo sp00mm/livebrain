@@ -483,7 +483,7 @@ class LiveView(QWidget):
 
     def _on_complete(self, thread_id: str, response: AIResponse):
         self._chat_feed.remove_status(thread_id)
-        self._chat_feed.set_answer_complete(thread_id)
+        self._chat_feed.set_answer_complete(thread_id, response.file_references)
         feed_id = self._answer_feed_ids.pop(thread_id, None)
         if feed_id:
             self._feed_repo.update_content(feed_id, response.text)
