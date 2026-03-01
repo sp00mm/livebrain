@@ -32,7 +32,6 @@ FEED_ANSWER_ACTIVE = '#e0e0e0'
 FEED_ANSWER_FADED = '#999999'
 FEED_STATUS_COLOR = '#707070'
 
-AUDIT_TOOL_BG = '#1a2a1a'
 AUDIT_STEP_COLOR = '#888888'
 
 FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif'

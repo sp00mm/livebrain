@@ -182,6 +182,9 @@ class LiveView(QWidget):
         if not self._session:
             return
         from ui.widgets.audit_view import AuditWindow
+        if hasattr(self, '_audit_window') and self._audit_window.isVisible():
+            self._audit_window.raise_()
+            return
         self._audit_window = AuditWindow(self._session.id, self.app.db)
         self._audit_window.show()
 

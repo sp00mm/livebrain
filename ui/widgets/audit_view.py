@@ -5,47 +5,16 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from models import FeedItemType, StepType, StepStatus, SpeakerType
+from models import FeedItemType, StepType, StepStatus
 from services.database import (
     Database, InteractionRepository, ExecutionStepRepository,
-    AIResponseRepository, TranscriptEntryRepository, ChatFeedItemRepository
+    AIResponseRepository, ChatFeedItemRepository
 )
 from ui.styles import (
     STYLE_SHEET, BG_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM,
-    FEED_QUESTION_BG, FEED_ANSWER_ACTIVE, FEED_ANSWER_FADED,
+    FEED_QUESTION_BG, FEED_ANSWER_FADED,
     AUDIT_STEP_COLOR
 )
-
-
-class AuditTranscriptItem(QFrame):
-    def __init__(self, entry, parent=None):
-        super().__init__(parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 4, 10, 4)
-        layout.setSpacing(8)
-
-        is_user = entry.speaker == SpeakerType.USER
-        icon_name = 'mdi.microphone' if is_user else 'mdi.volume-high'
-        icon = QLabel()
-        icon.setPixmap(qta.icon(icon_name, color=TEXT_DIM).pixmap(14, 14))
-        icon.setFixedWidth(14)
-        layout.addWidget(icon)
-
-        speaker = 'You' if is_user else 'Other'
-        speaker_label = QLabel(speaker)
-        speaker_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px; font-weight: 500;')
-        speaker_label.setFixedWidth(36)
-        layout.addWidget(speaker_label)
-
-        text = QLabel(entry.text)
-        text.setWordWrap(True)
-        text.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
-        layout.addWidget(text, 1)
-
-        if entry.timestamp:
-            ts = QLabel(entry.timestamp.strftime('%H:%M:%S'))
-            ts.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px;')
-            layout.addWidget(ts)
 
 
 class AuditFeedItem(QFrame):
@@ -71,10 +40,9 @@ class AuditFeedItem(QFrame):
             label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
             layout.addWidget(label)
 
-        if item.created_at:
-            ts = QLabel(item.created_at.strftime('%H:%M:%S'))
-            ts.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px;')
-            layout.addWidget(ts)
+        ts = QLabel(item.created_at.strftime('%H:%M:%S'))
+        ts.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px;')
+        layout.addWidget(ts)
 
 
 class AuditStepItem(QFrame):
@@ -89,12 +57,12 @@ class AuditStepItem(QFrame):
             StepType.SEARCHING_FILES: 'Looking through files',
             StepType.GENERATING: 'Thinking...',
         }
-        type_label = QLabel(labels.get(step.step_type, 'Working...'))
+        type_label = QLabel(labels[step.step_type])
         type_label.setStyleSheet(f'color: {AUDIT_STEP_COLOR}; font-size: 11px; font-style: italic;')
         layout.addWidget(type_label, 1)
 
         status_text = step.status.value
-        if step.status == StepStatus.COMPLETED and step.started_at and step.completed_at:
+        if step.status == StepStatus.COMPLETED:
             duration = (step.completed_at - step.started_at).total_seconds()
             status_text = f'{duration:.1f}s'
         elif step.status == StepStatus.FAILED:
@@ -117,18 +85,14 @@ class AuditResponseItem(QFrame):
         text.setStyleSheet(f'color: {FEED_ANSWER_FADED}; font-size: 12px;')
         layout.addWidget(text)
 
-        meta_parts = []
-        if response.tokens_output:
-            meta_parts.append(f'{response.tokens_output} tokens')
-        if response.latency_ms:
-            meta_parts.append(f'{response.latency_ms}ms')
-        if response.created_at:
-            meta_parts.append(response.created_at.strftime('%H:%M:%S'))
-
-        if meta_parts:
-            meta = QLabel(' · '.join(meta_parts))
-            meta.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px;')
-            layout.addWidget(meta)
+        meta_parts = [
+            f'{response.tokens_output} tokens',
+            f'{response.latency_ms}ms',
+            response.created_at.strftime('%H:%M:%S'),
+        ]
+        meta = QLabel(' \u00b7 '.join(meta_parts))
+        meta.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px;')
+        layout.addWidget(meta)
 
 
 class AuditWindow(QWidget):
@@ -139,7 +103,6 @@ class AuditWindow(QWidget):
         self.setWindowTitle('Session Audit')
         self.setStyleSheet(STYLE_SHEET)
 
-        self._transcript_repo = TranscriptEntryRepository(db)
         self._feed_repo = ChatFeedItemRepository(db)
         self._interaction_repo = InteractionRepository(db)
         self._step_repo = ExecutionStepRepository(db)
@@ -186,10 +149,6 @@ class AuditWindow(QWidget):
     def _load_session(self, session_id):
         events = []
 
-        transcripts = self._transcript_repo.get_by_session(session_id)
-        for t in transcripts:
-            events.append(('transcript', t.timestamp, t))
-
         feed_items = self._feed_repo.get_by_session(session_id)
         for item in feed_items:
             events.append(('feed', item.created_at, item))
@@ -206,9 +165,7 @@ class AuditWindow(QWidget):
         events.sort(key=lambda e: e[1])
 
         for event_type, _, data in events:
-            if event_type == 'transcript':
-                self._add_item(AuditTranscriptItem(data))
-            elif event_type == 'feed':
+            if event_type == 'feed':
                 self._add_item(AuditFeedItem(data))
             elif event_type == 'step':
                 self._add_item(AuditStepItem(data))
