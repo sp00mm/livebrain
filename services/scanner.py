@@ -39,14 +39,20 @@ class FileScanner:
         return total_bytes, len(files), files
 
     def extract_text(self, filepath):
+        segments = self.extract_text_with_meta(filepath)
+        if not segments:
+            return None
+        return '\n'.join(text for text, _ in segments)
+
+    def extract_text_with_meta(self, filepath) -> list[tuple[str, dict]]:
         ext = os.path.splitext(filepath)[1].lower()
         if ext == '.pdf':
-            return self._extract_pdf(filepath)
+            return self._extract_pdf_with_meta(filepath)
         if ext in self.OFFICE_EXTENSIONS:
-            return self._extract_office(ext, filepath)
+            return self._extract_office_with_meta(ext, filepath)
         if ext in self.TEXT_EXTENSIONS:
-            return self._extract_text_file(filepath)
-        return None
+            return [(self._extract_text_file(filepath), {'type': 'text'})]
+        return []
 
     def _walk_filtered(self, directory):
         specs = []
@@ -78,38 +84,44 @@ class FileScanner:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             return f.read()
 
-    def _extract_pdf(self, filepath):
+    def _extract_pdf_with_meta(self, filepath):
         reader = PdfReader(filepath)
-        return '\n'.join(page.extract_text() for page in reader.pages)
+        return [(page.extract_text(), {'page': i + 1}) for i, page in enumerate(reader.pages)]
 
-    def _extract_office(self, ext, filepath):
+    def _extract_office_with_meta(self, ext, filepath):
         if ext == '.docx':
-            return self._extract_docx(filepath)
+            return self._extract_docx_with_meta(filepath)
         if ext == '.xlsx':
-            return self._extract_xlsx(filepath)
+            return self._extract_xlsx_with_meta(filepath)
         if ext == '.pptx':
-            return self._extract_pptx(filepath)
+            return self._extract_pptx_with_meta(filepath)
+        return []
 
-    def _extract_docx(self, filepath):
+    def _extract_docx_with_meta(self, filepath):
         from docx import Document
         doc = Document(filepath)
-        return '\n'.join(p.text for p in doc.paragraphs)
+        text = '\n'.join(p.text for p in doc.paragraphs)
+        return [(text, {'page': 1})]
 
-    def _extract_xlsx(self, filepath):
+    def _extract_xlsx_with_meta(self, filepath):
         from openpyxl import load_workbook
         wb = load_workbook(filepath, read_only=True)
-        lines = []
+        segments = []
         for sheet in wb.worksheets:
+            lines = []
             for row in sheet.iter_rows(values_only=True):
                 lines.append('\t'.join(str(cell) if cell is not None else '' for cell in row))
-        return '\n'.join(lines)
+            segments.append(('\n'.join(lines), {'sheet': sheet.title}))
+        return segments
 
-    def _extract_pptx(self, filepath):
+    def _extract_pptx_with_meta(self, filepath):
         from pptx import Presentation
         prs = Presentation(filepath)
-        texts = []
-        for slide in prs.slides:
+        segments = []
+        for i, slide in enumerate(prs.slides):
+            texts = []
             for shape in slide.shapes:
                 if shape.has_text_frame:
                     texts.append(shape.text_frame.text)
-        return '\n'.join(texts)
+            segments.append(('\n'.join(texts), {'slide': i + 1}))
+        return segments

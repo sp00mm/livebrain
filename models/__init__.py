@@ -117,6 +117,7 @@ class DocumentChunk:
     end_char: int = 0
     text: str = ''
     embedding: list[float] = field(default_factory=list)
+    source_meta: dict | None = None
     created_at: datetime = field(default_factory=now)
 
 

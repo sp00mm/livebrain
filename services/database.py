@@ -338,10 +338,12 @@ class DocumentChunkRepository:
 
     def create(self, chunk: DocumentChunk) -> DocumentChunk:
         embedding_json = json.dumps(chunk.embedding)
+        source_meta_json = json.dumps(chunk.source_meta) if chunk.source_meta else None
         self.conn.execute('''
             INSERT INTO document_chunks (id, resource_id, filepath, chunk_index,
-                                        start_char, end_char, text, embedding, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, vector32(?), ?)
+                                        start_char, end_char, text, embedding,
+                                        source_meta, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, vector32(?), ?, ?)
         ''', [
             chunk.id,
             chunk.resource_id,
@@ -351,6 +353,7 @@ class DocumentChunkRepository:
             chunk.end_char,
             chunk.text,
             embedding_json,
+            source_meta_json,
             _dt_to_str(chunk.created_at)
         ])
         self.conn.commit()
@@ -362,7 +365,7 @@ class DocumentChunkRepository:
 
     def get_by_resource(self, resource_id: str) -> list[DocumentChunk]:
         cursor = self.conn.execute(
-            'SELECT id, resource_id, filepath, chunk_index, start_char, end_char, text, created_at '
+            'SELECT id, resource_id, filepath, chunk_index, start_char, end_char, text, source_meta, created_at '
             'FROM document_chunks WHERE resource_id = ? ORDER BY chunk_index',
             [resource_id]
         )
@@ -382,7 +385,7 @@ class DocumentChunkRepository:
             placeholders = ','.join(['?'] * len(resource_ids))
             cursor = self.conn.execute(f'''
                 SELECT dc.id, dc.resource_id, dc.filepath, dc.chunk_index,
-                       dc.start_char, dc.end_char, dc.text, dc.created_at,
+                       dc.start_char, dc.end_char, dc.text, dc.source_meta, dc.created_at,
                        vector_distance_cos(dc.embedding, vector32(?)) as distance
                 FROM vector_top_k('idx_chunks_embedding', vector32(?), ?) as vtk
                 JOIN document_chunks dc ON dc.rowid = vtk.id
@@ -392,7 +395,7 @@ class DocumentChunkRepository:
         else:
             cursor = self.conn.execute('''
                 SELECT dc.id, dc.resource_id, dc.filepath, dc.chunk_index,
-                       dc.start_char, dc.end_char, dc.text, dc.created_at,
+                       dc.start_char, dc.end_char, dc.text, dc.source_meta, dc.created_at,
                        vector_distance_cos(dc.embedding, vector32(?)) as distance
                 FROM vector_top_k('idx_chunks_embedding', vector32(?), ?) as vtk
                 JOIN document_chunks dc ON dc.rowid = vtk.id
@@ -401,8 +404,8 @@ class DocumentChunkRepository:
 
         results = []
         for row in cursor.fetchall()[:limit]:
-            chunk = self._row_to_chunk(row[:8])
-            similarity = 1 - row[8]
+            chunk = self._row_to_chunk(row[:9])
+            similarity = 1 - row[9]
             results.append((chunk, similarity))
         return results
 
@@ -416,7 +419,8 @@ class DocumentChunkRepository:
             end_char=row[5],
             text=row[6],
             embedding=[],
-            created_at=_str_to_dt(row[7])
+            source_meta=json.loads(row[7]) if row[7] else None,
+            created_at=_str_to_dt(row[8])
         )
 
 
@@ -906,17 +910,31 @@ class RAGService:
         chunk_size: int = 1000,
         chunk_overlap: int = 200
     ) -> None:
-        """Index text content into chunks with embeddings for a resource."""
-        for i, (chunk_text, start, end) in enumerate(self._chunk_text(text, chunk_size, chunk_overlap)):
-            self.chunks.create(DocumentChunk(
-                resource_id=resource_id,
-                filepath=filepath,
-                chunk_index=i,
-                start_char=start,
-                end_char=end,
-                text=chunk_text,
-                embedding=embedding_fn(chunk_text)
-            ))
+        self.index_text_with_meta(resource_id, filepath, [(text, {})], embedding_fn, chunk_size, chunk_overlap)
+
+    def index_text_with_meta(
+        self,
+        resource_id: str,
+        filepath: str,
+        segments: list[tuple[str, dict]],
+        embedding_fn,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200
+    ) -> None:
+        chunk_index = 0
+        for text, meta in segments:
+            for chunk_text, start, end in self._chunk_text(text, chunk_size, chunk_overlap):
+                self.chunks.create(DocumentChunk(
+                    resource_id=resource_id,
+                    filepath=filepath,
+                    chunk_index=chunk_index,
+                    start_char=start,
+                    end_char=end,
+                    text=chunk_text,
+                    embedding=embedding_fn(chunk_text),
+                    source_meta=meta or None
+                ))
+                chunk_index += 1
 
     def search(self, query_embedding: list[float], resource_ids: Optional[list[str]] = None, limit: int = 10) -> list[dict]:
         """Search for relevant chunks. Returns list of {chunk, similarity, resource}."""

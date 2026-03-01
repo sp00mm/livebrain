@@ -118,3 +118,69 @@ class TestFileScanner:
         prs.save(path)
 
         assert 'Slide Title' in FileScanner().extract_text(path)
+
+    def test_extract_text_with_meta_pdf(self, tmp_path):
+        from fpdf import FPDF
+
+        path = str(tmp_path / 'test.pdf')
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font('Helvetica', size=12)
+        pdf.cell(text='Page one content')
+        pdf.add_page()
+        pdf.cell(text='Page two content')
+        pdf.output(path)
+
+        result = FileScanner().extract_text_with_meta(path)
+
+        assert len(result) == 2
+        assert 'Page one' in result[0][0]
+        assert result[0][1] == {'page': 1}
+        assert 'Page two' in result[1][0]
+        assert result[1][1] == {'page': 2}
+
+    def test_extract_text_with_meta_pptx(self, tmp_path):
+        from pptx import Presentation
+        path = str(tmp_path / 'test.pptx')
+        prs = Presentation()
+        for i in range(2):
+            slide = prs.slides.add_slide(prs.slide_layouts[0])
+            slide.shapes.title.text = f'Slide {i + 1}'
+        prs.save(path)
+
+        result = FileScanner().extract_text_with_meta(path)
+
+        assert len(result) == 2
+        assert 'Slide 1' in result[0][0]
+        assert result[0][1] == {'slide': 1}
+        assert 'Slide 2' in result[1][0]
+        assert result[1][1] == {'slide': 2}
+
+    def test_extract_text_with_meta_xlsx(self, tmp_path):
+        from openpyxl import Workbook
+        path = str(tmp_path / 'test.xlsx')
+        wb = Workbook()
+        ws1 = wb.active
+        ws1.title = 'Sales'
+        ws1.append(['Product', 'Revenue'])
+        ws2 = wb.create_sheet('Costs')
+        ws2.append(['Item', 'Amount'])
+        wb.save(path)
+
+        result = FileScanner().extract_text_with_meta(path)
+
+        assert len(result) == 2
+        assert result[0][1] == {'sheet': 'Sales'}
+        assert 'Product' in result[0][0]
+        assert result[1][1] == {'sheet': 'Costs'}
+        assert 'Item' in result[1][0]
+
+    def test_extract_text_with_meta_text(self, tmp_path):
+        f = tmp_path / 'hello.txt'
+        f.write_text('hello world')
+
+        result = FileScanner().extract_text_with_meta(str(f))
+
+        assert len(result) == 1
+        assert result[0][0] == 'hello world'
+        assert result[0][1] == {'type': 'text'}

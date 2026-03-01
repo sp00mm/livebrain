@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     end_char INTEGER NOT NULL,
     text TEXT NOT NULL,
     embedding f32_blob(768),
+    source_meta TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
 );
