@@ -67,7 +67,7 @@ class AuditStepItem(QFrame):
         row.addWidget(type_label, 1)
 
         status_text = step.status.value
-        if step.status == StepStatus.COMPLETED and step.completed_at:
+        if step.status == StepStatus.COMPLETED:
             duration = (step.completed_at - step.started_at).total_seconds()
             status_text = f'{duration:.1f}s'
         elif step.status == StepStatus.FAILED:
@@ -81,17 +81,13 @@ class AuditStepItem(QFrame):
 
         if step.step_type == StepType.SEARCHING_FILES and step.details:
             details = json.loads(step.details)
-            query = details.get('query', '')
-            files = details.get('matched_files', [])
-            if query:
-                q_label = QLabel(f'Search: "{query}"')
-                q_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px; padding-left: 4px;')
-                layout.addWidget(q_label)
-            if files:
-                f_label = QLabel(f'Found: {", ".join(files)}')
-                f_label.setWordWrap(True)
-                f_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px; padding-left: 4px;')
-                layout.addWidget(f_label)
+            q_label = QLabel(f'Search: "{details["query"]}"')
+            q_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px; padding-left: 4px;')
+            layout.addWidget(q_label)
+            f_label = QLabel(f'Found: {", ".join(details["matched_files"])}')
+            f_label.setWordWrap(True)
+            f_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px; padding-left: 4px;')
+            layout.addWidget(f_label)
 
 
 class AuditResponseItem(QFrame):

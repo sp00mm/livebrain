@@ -149,8 +149,7 @@ class QueryExecutionService:
                 file_refs.extend(refs)
                 resource_ids.extend(res_ids)
                 details = json.dumps({
-                    'tool': tc.name,
-                    'query': tc_args.get('query', ''),
+                    'query': tc_args['query'],
                     'matched_files': [r.display_name for r in refs]
                 })
                 self._step_repo.update_details(step.id, details)
