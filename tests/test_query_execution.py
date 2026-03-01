@@ -485,6 +485,30 @@ class TestRichSystemPrompt:
         assert 'red flags' in prompt
 
 
+class TestToolCallDetail:
+    def test_dataclass(self):
+        from models import ToolCallDetail
+        detail = ToolCallDetail(
+            tool_name='search_files',
+            query='revenue growth',
+            results_count=5,
+            matched_files=['report.pdf', 'notes.txt'],
+            duration_ms=42
+        )
+        assert detail.tool_name == 'search_files'
+        assert detail.query == 'revenue growth'
+        assert detail.results_count == 5
+        assert len(detail.matched_files) == 2
+        assert detail.duration_ms == 42
+
+    def test_defaults(self):
+        from models import ToolCallDetail
+        detail = ToolCallDetail()
+        assert detail.tool_name == ''
+        assert detail.matched_files == []
+        assert detail.duration_ms == 0
+
+
 class TestToolExecution:
     def test_build_tools_with_folders(self, db):
         service = QueryExecutionService(db, MockEmbedder())

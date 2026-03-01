@@ -482,6 +482,7 @@ class LiveView(QWidget):
         thread.step_update.connect(self._on_step_update)
         thread.delta.connect(self._on_delta)
         thread.complete.connect(self._on_complete)
+        thread.tool_call.connect(self._on_tool_call)
         thread.finished.connect(lambda tid=thread_id: self._on_thread_finished(tid))
         self._active_threads[thread_id] = thread
         thread.start()
@@ -499,6 +500,9 @@ class LiveView(QWidget):
 
     def _on_delta(self, thread_id: str, text: str):
         self._chat_feed.append_answer_delta(thread_id, text)
+
+    def _on_tool_call(self, thread_id: str, detail):
+        self._chat_feed.add_tool_call(thread_id, detail)
 
     def _on_complete(self, thread_id: str, response: AIResponse):
         self._chat_feed.remove_status(thread_id)

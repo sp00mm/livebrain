@@ -10,6 +10,7 @@ class QueryExecutionThread(QThread):
     delta = Signal(str, str)            # (thread_id, text chunk)
     complete = Signal(str, object)      # (thread_id, AIResponse)
     error = Signal(str, str)            # (thread_id, error message)
+    tool_call = Signal(str, object)     # (thread_id, ToolCallDetail)
 
     def __init__(self, db: Database, embedder, session_id: str, brain: Brain,
                  query_text: str, transcript: list[TranscriptEntry],
@@ -45,7 +46,8 @@ class QueryExecutionThread(QThread):
         callbacks = ExecutionCallbacks(
             on_step=lambda step: self.step_update.emit(self.thread_id, step),
             on_delta=lambda text: self.delta.emit(self.thread_id, text),
-            on_complete=lambda resp: self.complete.emit(self.thread_id, resp)
+            on_complete=lambda resp: self.complete.emit(self.thread_id, resp),
+            on_tool_call=lambda detail: self.tool_call.emit(self.thread_id, detail)
         )
 
         service.execute(ctx, callbacks)

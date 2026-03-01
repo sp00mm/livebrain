@@ -8,7 +8,8 @@ import time
 
 from models import (
     Brain, Interaction, AIResponse, ExecutionStep, FileReference,
-    TranscriptEntry, QueryType, StepType, StepStatus, ResourceType
+    TranscriptEntry, QueryType, StepType, StepStatus, ResourceType,
+    ToolCallDetail
 )
 from services.database import (
     Database, QuestionRepository,
@@ -60,6 +61,7 @@ class ExecutionCallbacks:
     on_step: Callable[[ExecutionStep], None]
     on_delta: Callable[[str], None]
     on_complete: Callable[[AIResponse], None]
+    on_tool_call: Callable | None = None
 
 
 class QueryExecutionService:
@@ -144,10 +146,22 @@ class QueryExecutionService:
 
             for tc in llm_response.tool_calls:
                 step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
-                result, refs, res_ids = self._execute_tool(tc.name, json.loads(tc.arguments), folder_ids)
+                tool_start = time.time()
+                args = json.loads(tc.arguments)
+                result, refs, res_ids = self._execute_tool(tc.name, args, folder_ids)
+                tool_duration = int((time.time() - tool_start) * 1000)
                 file_refs.extend(refs)
                 resource_ids.extend(res_ids)
                 self._complete_step(step.id, callbacks.on_step)
+
+                if callbacks.on_tool_call:
+                    callbacks.on_tool_call(ToolCallDetail(
+                        tool_name=tc.name,
+                        query=args.get('query', ''),
+                        results_count=len(refs),
+                        matched_files=[r.display_name for r in refs],
+                        duration_ms=tool_duration
+                    ))
 
                 extra_input.append({
                     'type': 'function_call_output',

@@ -222,6 +222,15 @@ class ChatFeedItem:
 
 
 @dataclass
+class ToolCallDetail:
+    tool_name: str = ''
+    query: str = ''
+    results_count: int = 0
+    matched_files: list[str] = field(default_factory=list)
+    duration_ms: int = 0
+
+
+@dataclass
 class UserSettings:
     default_input_device: Optional[str] = None
     default_output_device: Optional[str] = None

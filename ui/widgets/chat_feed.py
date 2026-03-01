@@ -166,6 +166,52 @@ ul, ol {{ margin: 4px 0; padding-left: 20px; }}
             self._adjust_height()
 
 
+class ToolCallItem(QFrame):
+    def __init__(self, detail, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f'QFrame {{ background-color: {BG_CARD}; border-radius: 6px; }}')
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(4)
+
+        summary = QLabel(f'Searched: "{detail.query}"')
+        summary.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px;')
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+
+        self._detail_widget = QWidget()
+        self._detail_widget.setVisible(False)
+        detail_layout = QVBoxLayout(self._detail_widget)
+        detail_layout.setContentsMargins(0, 4, 0, 0)
+        detail_layout.setSpacing(2)
+
+        if detail.matched_files:
+            files_text = ', '.join(detail.matched_files)
+            files_label = QLabel(f'Found in: {files_text}')
+            files_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
+            files_label.setWordWrap(True)
+            detail_layout.addWidget(files_label)
+
+        meta_parts = [f'{detail.results_count} results']
+        if detail.duration_ms:
+            meta_parts.append(f'{detail.duration_ms}ms')
+        meta_label = QLabel(' \u00b7 '.join(meta_parts))
+        meta_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
+        detail_layout.addWidget(meta_label)
+
+        layout.addWidget(self._detail_widget)
+
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._expanded = False
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._expanded = not self._expanded
+            self._detail_widget.setVisible(self._expanded)
+        super().mousePressEvent(event)
+
+
 class StatusItem(QLabel):
     def __init__(self, text: str = '', parent=None):
         super().__init__(text, parent)
@@ -235,6 +281,11 @@ class ChatFeedWidget(QWidget):
             item = StatusItem(text)
             self._status_items[thread_id] = item
             self._insert_item(item)
+
+    def add_tool_call(self, thread_id: str, detail) -> ToolCallItem:
+        item = ToolCallItem(detail)
+        self._insert_item(item)
+        return item
 
     def remove_status(self, thread_id: str):
         if thread_id in self._status_items:
