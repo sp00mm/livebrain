@@ -112,26 +112,13 @@ class AnswerItem(QFrame):
 
         def replace_href(match):
             href = match.group(1)
-            text = match.group(2)
-            if href in ref_map:
-                ref = ref_map[href]
-                fragment = ''
-                if ref.source_meta and ref.source_meta.get('page'):
-                    fragment = f'#page={ref.source_meta["page"]}'
-                return f'<a href="file://{ref.filepath}{fragment}">{text}</a>'
-            return match.group(0)
+            if href not in ref_map:
+                return match.group(0)
+            ref = ref_map[href]
+            fragment = f'#page={ref.source_meta["page"]}' if ref.source_meta and ref.source_meta.get('page') else ''
+            return f'<a href="file://{ref.filepath}{fragment}">{match.group(2)}</a>'
 
-        html = re.sub(r'<a href="([^"]+)">([^<]+)</a>', replace_href, html)
-
-        for name, ref in ref_map.items():
-            escaped = re.escape(name)
-            pattern = rf'(?<!["\w/])\[{escaped}\](?![(\w])'
-            fragment = ''
-            if ref.source_meta and ref.source_meta.get('page'):
-                fragment = f'#page={ref.source_meta["page"]}'
-            html = re.sub(pattern, f'<a href="file://{ref.filepath}{fragment}">[{name}]</a>', html)
-
-        return html
+        return re.sub(r'<a href="([^"]+)">([^<]+)</a>', replace_href, html)
 
     def _on_link_clicked(self, url: QUrl):
         path = url.toLocalFile()

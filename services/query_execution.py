@@ -329,8 +329,8 @@ class QueryExecutionService:
         if source_names:
             names_list = ', '.join(source_names[:10])
             sections.append(
-                'When citing information from documents, use markdown link format: '
-                '[key quote or phrase](source_name). '
+                'When citing information from documents, use markdown link format. '
+                f'Example: [relevant quote]({source_names[0]}). '
                 f'Available sources: {names_list}. '
                 'Only cite sources you actually used. Keep citations natural and inline.'
             )

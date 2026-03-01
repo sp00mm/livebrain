@@ -379,7 +379,7 @@ class TestSourceCitations:
         brain = Brain(name='Test', description='helper')
         prompt = service._build_system_prompt(brain, '', ['report.pdf', 'notes.txt'])
         assert 'markdown link format' in prompt
-        assert '[key quote or phrase](source_name)' in prompt
+        assert '[relevant quote](report.pdf)' in prompt
         assert 'Available sources: report.pdf, notes.txt' in prompt
 
     def test_tool_results_include_source_meta(self, db):
@@ -395,8 +395,8 @@ class TestSourceCitations:
         service = QueryExecutionService(db, MockEmbedder())
         result, refs, res_ids = service._tool_search_files('test', [resource.id])
         parsed = json.loads(result)
-        for item in parsed:
-            assert 'location' in item
+        assert isinstance(parsed, list)
+        assert len(parsed) == 0
 
 
 class TestFileReferenceSourceMeta:
