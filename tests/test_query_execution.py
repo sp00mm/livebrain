@@ -102,7 +102,7 @@ class TestQueryExecutionService:
 
         prompt = service._build_system_prompt(brain)
 
-        assert prompt == 'You are a custom assistant.'
+        assert 'You are a custom assistant.' in prompt
 
 
 class TestConversationContext:
@@ -187,7 +187,7 @@ class TestBuildSystemPromptWithFileContext:
 
         assert 'Interview Helper' in prompt
         assert 'Helps with interviews' in prompt
-        assert 'Here are reference documents' in prompt
+        assert 'Reference documents' in prompt
         assert 'some file content' in prompt
 
     def test_custom_prompt_with_file_context(self, db):
@@ -196,8 +196,8 @@ class TestBuildSystemPromptWithFileContext:
 
         prompt = service._build_system_prompt(brain, 'doc text')
 
-        assert prompt.startswith('You are a custom assistant.')
-        assert 'Here are reference documents' in prompt
+        assert 'You are a custom assistant.' in prompt
+        assert 'Reference documents' in prompt
         assert 'doc text' in prompt
 
     def test_empty_file_context_not_appended(self, db):
@@ -206,7 +206,7 @@ class TestBuildSystemPromptWithFileContext:
 
         prompt = service._build_system_prompt(brain, '')
 
-        assert 'reference documents' not in prompt
+        assert 'Reference documents' not in prompt
 
 
 class TestGatherFileContext:
@@ -365,13 +365,59 @@ class TestSourceCitations:
         service = QueryExecutionService(db, MockEmbedder())
         brain = Brain(name='Test', description='helper')
         prompt = service._build_system_prompt(brain, '')
-        assert 'cite' not in prompt
+        assert 'cite it inline' not in prompt
 
     def test_system_prompt_with_none_source_names(self, db):
         service = QueryExecutionService(db, MockEmbedder())
         brain = Brain(name='Test', description='helper')
         prompt = service._build_system_prompt(brain, '', None)
-        assert 'cite' not in prompt
+        assert 'cite it inline' not in prompt
+
+
+class TestRichSystemPrompt:
+    def test_prompt_contains_livebrain_identity(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test')
+        prompt = service._build_system_prompt(brain)
+        assert 'LiveBrain' in prompt
+
+    def test_prompt_contains_transcript_warning(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test')
+        prompt = service._build_system_prompt(brain)
+        assert 'speech recognition' in prompt
+
+    def test_prompt_contains_tool_descriptions(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test')
+        prompt = service._build_system_prompt(brain, has_folders=True)
+        assert 'Search files' in prompt
+
+    def test_prompt_contains_behavioral_rules(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test')
+        prompt = service._build_system_prompt(brain)
+        assert 'Be concise' in prompt
+
+    def test_prompt_with_file_tree(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test')
+        prompt = service._build_system_prompt(brain, file_tree='project/\n  main.py\n  utils.py')
+        assert 'Directory structure' in prompt
+        assert 'main.py' in prompt
+
+    def test_prompt_without_file_tree(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Test')
+        prompt = service._build_system_prompt(brain)
+        assert 'Directory structure' not in prompt
+
+    def test_prompt_with_template_context(self, db):
+        service = QueryExecutionService(db, MockEmbedder())
+        brain = Brain(name='Interview', template_type='interview')
+        prompt = service._build_system_prompt(brain)
+        assert 'interviewer' in prompt
+        assert 'red flags' in prompt
 
 
 class TestToolExecution:
