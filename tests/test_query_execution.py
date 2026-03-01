@@ -3,6 +3,8 @@ import struct
 import tempfile
 import zlib
 
+import pytest
+
 from models import (
     Brain, Question, Session, TranscriptEntry, Interaction, AIResponse, ExecutionStep,
     Resource, ResourceType, IndexStatus,
@@ -336,7 +338,6 @@ class TestImageContent:
 
     def test_build_messages_with_images(self, db):
         service = QueryExecutionService(db, MockEmbedder())
-        from services.conversation import ConversationContext
         conv = ConversationContext(session_id='s1', brain_id='b1')
         image_blocks = [{'type': 'input_image', 'image_url': 'data:image/png;base64,abc'}]
         messages = service._build_messages(conv, 'describe this', image_blocks)
@@ -346,7 +347,6 @@ class TestImageContent:
 
     def test_build_messages_without_images(self, db):
         service = QueryExecutionService(db, MockEmbedder())
-        from services.conversation import ConversationContext
         conv = ConversationContext(session_id='s1', brain_id='b1')
         messages = service._build_messages(conv, 'hello')
         assert isinstance(messages[-1].content, str)
@@ -444,7 +444,6 @@ class TestToolExecution:
 
     def test_execute_tool_unknown(self, db):
         service = QueryExecutionService(db, MockEmbedder())
-        import pytest
         with pytest.raises(ValueError, match='Unknown tool'):
             service._execute_tool('nonexistent_tool', {}, [])
 
