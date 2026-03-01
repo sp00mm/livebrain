@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QScrollArea,
-    QFrame, QSizePolicy
+    QFrame, QSizePolicy, QTextBrowser
 )
 from PySide6.QtCore import Qt
 
@@ -8,8 +8,9 @@ from models import FeedItemType
 from ui.styles import (
     BG_CARD, TEXT_SECONDARY, TEXT_DIM,
     FEED_DIVIDER, FEED_QUESTION_BG, FEED_ANSWER_ACTIVE,
-    FEED_ANSWER_FADED, FEED_STATUS_COLOR
+    FEED_ANSWER_FADED, FEED_STATUS_COLOR, FONT_FAMILY
 )
+from ui.markdown_renderer import render_markdown
 
 
 class TranscriptDividerItem(QFrame):
@@ -68,31 +69,69 @@ class QuestionItem(QFrame):
 class AnswerItem(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(10, 8, 10, 8)
 
-        self._label = QLabel('')
-        self._label.setWordWrap(True)
-        self._label.setTextFormat(Qt.TextFormat.PlainText)
-        self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self._label.setStyleSheet(f'color: {FEED_ANSWER_ACTIVE}; font-size: 13px;')
-        layout.addWidget(self._label)
+        self._browser = QTextBrowser()
+        self._browser.setOpenExternalLinks(False)
+        self._browser.setFrameShape(QFrame.Shape.NoFrame)
+        self._browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._browser.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._browser.document().setDocumentMargin(0)
+        self._browser.setStyleSheet('QTextBrowser { background: transparent; border: none; }')
+        self._layout.addWidget(self._browser)
 
         self._text = ''
+        self._faded = False
+        self._file_refs = []
 
     def append_delta(self, delta: str):
         self._text += delta
-        self._label.setText(self._text)
+        html = render_markdown(self._text)
+        self._browser.setHtml(self._wrap_html(html))
+        self._adjust_height()
 
-    def set_complete(self):
-        self._label.setStyleSheet(f'color: {FEED_ANSWER_FADED}; font-size: 13px;')
+    def set_complete(self, file_refs=None):
+        self._faded = True
+        self._file_refs = file_refs or []
+        html = render_markdown(self._text)
+        self._browser.setHtml(self._wrap_html(html))
+        self._adjust_height()
 
     def set_text(self, text: str):
         self._text = text
-        self._label.setText(text)
+        html = render_markdown(text)
+        self._browser.setHtml(self._wrap_html(html))
+        self._adjust_height()
 
     def get_text(self) -> str:
         return self._text
+
+    def _wrap_html(self, body: str) -> str:
+        color = FEED_ANSWER_FADED if self._faded else FEED_ANSWER_ACTIVE
+        return f'''<style>
+body {{ color: {color}; font-size: 13px; font-family: {FONT_FAMILY}; margin: 0; padding: 0; }}
+code {{ background: #2a2a2a; padding: 1px 4px; border-radius: 3px; font-size: 12px; }}
+pre {{ background: #2a2a2a; padding: 8px; border-radius: 6px; }}
+pre code {{ background: none; padding: 0; }}
+a {{ color: #6eb5ff; }}
+h1, h2, h3 {{ margin: 8px 0 4px 0; }}
+p {{ margin: 4px 0; }}
+ul, ol {{ margin: 4px 0; padding-left: 20px; }}
+</style>{body}'''
+
+    def _adjust_height(self):
+        doc = self._browser.document()
+        doc.setTextWidth(self._browser.viewport().width())
+        height = int(doc.size().height()) + 4
+        self._browser.setMinimumHeight(height)
+        self._browser.setMaximumHeight(height)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._text:
+            self._adjust_height()
 
 
 class StatusItem(QLabel):
@@ -153,9 +192,9 @@ class ChatFeedWidget(QWidget):
             self._answer_items[thread_id].append_delta(delta)
             self._auto_scroll()
 
-    def set_answer_complete(self, thread_id: str):
+    def set_answer_complete(self, thread_id: str, file_refs=None):
         if thread_id in self._answer_items:
-            self._answer_items[thread_id].set_complete()
+            self._answer_items[thread_id].set_complete(file_refs)
 
     def update_status(self, thread_id: str, text: str):
         if thread_id in self._status_items:
