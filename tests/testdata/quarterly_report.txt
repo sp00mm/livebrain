@@ -1,0 +1,17 @@
+Acme Corp Q3 2025 Financial Summary
+
+Revenue: $4.2M (up 15% year-over-year)
+Operating Expenses: $3.1M
+Net Profit: $1.1M
+Profit Margin: 26.2%
+
+Headcount: 87 employees (added 12 in Q3)
+Key Hires: VP of Engineering, Senior Data Scientist
+
+Revenue Breakdown:
+- Enterprise contracts: $2.8M
+- SMB subscriptions: $1.0M
+- Professional services: $0.4M
+
+Notable wins: signed 3 Fortune 500 clients in September.
+Churn rate decreased from 4.1% to 2.8%.
