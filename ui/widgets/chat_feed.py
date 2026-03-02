@@ -118,7 +118,7 @@ class AnswerItem(QFrame):
             fragment = f'#page={ref.source_meta["page"]}' if ref.source_meta and ref.source_meta.get('page') else ''
             return f'<a href="file://{ref.filepath}{fragment}">{match.group(2)}</a>'
 
-        return re.sub(r'<a href="([^"]+)">([^<]+)</a>', replace_href, html)
+        return re.sub(r'<a href="([^"]+)">(.+?)</a>', replace_href, html)
 
     def _on_link_clicked(self, url: QUrl):
         path = url.toLocalFile()

@@ -244,7 +244,8 @@ class QueryExecutionService:
         context_parts = []
         file_refs = []
         used_resource_ids = []
-        seen = set()
+        seen_paths = set()
+        seen_resource_ids = set()
         for r in results:
             resource = r['resource']
             chunk = r['chunk']
@@ -256,16 +257,18 @@ class QueryExecutionService:
                 'relevance': round(similarity, 3),
                 'location': chunk.source_meta
             }))
-            if resource.id not in seen:
-                seen.add(resource.id)
-                used_resource_ids.append(resource.id)
+            if chunk.filepath not in seen_paths:
+                seen_paths.add(chunk.filepath)
                 file_refs.append(FileReference(
                     resource_id=resource.id,
                     filepath=chunk.filepath,
-                    display_name=resource.name,
+                    display_name=os.path.basename(chunk.filepath),
                     relevance_score=similarity,
                     source_meta=chunk.source_meta
                 ))
+            if resource.id not in seen_resource_ids:
+                seen_resource_ids.add(resource.id)
+                used_resource_ids.append(resource.id)
         return f'[{",".join(context_parts)}]', file_refs, used_resource_ids
 
     def _build_messages(self, conversation, query: str,
