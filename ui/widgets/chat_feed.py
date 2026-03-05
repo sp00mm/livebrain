@@ -77,6 +77,7 @@ class AnswerItem(QFrame):
         self._layout.setContentsMargins(10, 8, 10, 8)
 
         self._browser = QTextBrowser()
+        self._browser.setOpenLinks(False)
         self._browser.setOpenExternalLinks(False)
         self._browser.anchorClicked.connect(self._on_link_clicked)
         self._browser.setFrameShape(QFrame.Shape.NoFrame)
