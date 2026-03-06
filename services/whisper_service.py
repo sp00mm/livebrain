@@ -46,9 +46,7 @@ class WhisperTranscriptionService:
     def _transcribe_source(self, session_id: str, wav_path: str, source_name: str,
                            speaker_type: SpeakerType, session_start_time: datetime) -> list[TranscriptEntry]:
         key = (session_id, source_name)
-        if key not in self._states:
-            self._states[key] = _SourceState()
-        state = self._states[key]
+        state = self._states.setdefault(key, _SourceState())
 
         with open(wav_path, 'rb') as f:
             f.seek(44)
@@ -69,7 +67,6 @@ class WhisperTranscriptionService:
         chunks = self._chunk_audio(resampled_bytes)
         entries = []
         chunk_offset = 0.0
-        samples_per_chunk = self.MAX_CHUNK_BYTES // 2
 
         for chunk_bytes in chunks:
             wav_buffer = self._build_wav(chunk_bytes)
@@ -80,7 +77,7 @@ class WhisperTranscriptionService:
                 timestamp_granularities=['segment']
             )
 
-            for segment in (response.segments or []):
+            for segment in response.segments:
                 absolute_seconds = segment.start + chunk_offset + (start_frame / self.SAMPLE_RATE)
 
                 if start_frame > 0 and absolute_seconds < (state.last_frame / self.SAMPLE_RATE) - 2:
@@ -101,12 +98,8 @@ class WhisperTranscriptionService:
         return entries
 
     def _chunk_audio(self, audio_bytes: bytes) -> list[bytes]:
-        if len(audio_bytes) <= self.MAX_CHUNK_BYTES:
-            return [audio_bytes]
-        chunks = []
-        for i in range(0, len(audio_bytes), self.MAX_CHUNK_BYTES):
-            chunks.append(audio_bytes[i:i + self.MAX_CHUNK_BYTES])
-        return chunks
+        return [audio_bytes[i:i + self.MAX_CHUNK_BYTES]
+                for i in range(0, len(audio_bytes), self.MAX_CHUNK_BYTES)]
 
     def _build_wav(self, pcm_bytes: bytes) -> io.BytesIO:
         buf = io.BytesIO()
