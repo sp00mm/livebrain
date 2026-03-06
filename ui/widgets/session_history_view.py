@@ -6,8 +6,8 @@ from PySide6.QtCore import Qt, Signal
 
 import qtawesome as qta
 
-from models import Session, FeedItemType
-from services.database import Database, SessionRepository, ChatFeedItemRepository
+from models import Session, FeedItemType, SpeakerType
+from services.database import Database, SessionRepository, ChatFeedItemRepository, TranscriptEntryRepository
 from ui.styles import (
     STYLE_SHEET, BG_CARD, BG_CARD_HOVER,
     TEXT_PRIMARY, TEXT_SECONDARY
@@ -64,6 +64,7 @@ class SessionHistoryView(QWidget):
         self._db = db
         self._session_repo = SessionRepository(db)
         self._feed_repo = ChatFeedItemRepository(db)
+        self._transcript_repo = TranscriptEntryRepository(db)
         self._current_brain_id = None
         self._current_session_id = None
         self._exclude_session_id = None
@@ -198,16 +199,27 @@ class SessionHistoryView(QWidget):
         self._refresh_list()
 
     def _export_transcript(self):
+        entries = self._transcript_repo.get_by_session(self._current_session_id)
         items = self._feed_repo.get_by_session(self._current_session_id)
+
         lines = []
+        for entry in entries:
+            label = 'You' if entry.speaker == SpeakerType.USER else 'Other'
+            lines.append(f'{label}: {entry.text}')
+
+        qa_lines = []
         for item in items:
-            if item.item_type == FeedItemType.TRANSCRIPT:
-                lines.append(f'[Transcript]\n{item.content}\n')
-            elif item.item_type == FeedItemType.QUESTION:
-                lines.append(f'Q: {item.content}\n')
+            if item.item_type == FeedItemType.QUESTION:
+                qa_lines.append(f'Q: {item.content}')
             elif item.item_type == FeedItemType.ANSWER:
-                lines.append(f'A: {item.content}\n')
-        text = '\n'.join(lines)
+                qa_lines.append(f'A: {item.content}')
+
+        if qa_lines:
+            lines.append('')
+            lines.append('--- Questions & Answers ---')
+            lines.extend(qa_lines)
+
+        text = '\n\n'.join(lines)
 
         path, _ = QFileDialog.getSaveFileName(
             self, 'Export Session', 'session_transcript.txt', 'Text Files (*.txt)'
