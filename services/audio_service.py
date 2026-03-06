@@ -125,5 +125,8 @@ class AudioService:
     def start_transcribers(self):
         self._current_thread.start_transcribers()
 
+    def get_recording_paths(self) -> tuple[str, str]:
+        return self._current_thread._storage.get_mic_path(), self._current_thread._storage.get_system_path()
+
     def is_recording(self) -> bool:
         return self._current_thread is not None and self._current_thread.isRunning()

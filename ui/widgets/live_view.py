@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QLabel, QComboBox, QScrollArea, QFrame,
-    QSizePolicy
+    QSizePolicy, QStackedWidget
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -18,10 +18,12 @@ from services.database import SessionRepository, ChatFeedItemRepository
 from services.conversation import ConversationContextCache
 from ui.styles import (
     STYLE_SHEET, BG_CARD, BG_CARD_HOVER,
-    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_SECTION, RECORDING_COLOR, ACCENT
+    TEXT_SECONDARY, RECORDING_COLOR, ACCENT, USER_COLOR
 )
-from ui.threads import QueryExecutionThread
+from ui.threads import QueryExecutionThread, WhisperTranscriptionThread
 from ui.widgets.chat_feed import ChatFeedWidget
+from ui.widgets.waveform_widget import WaveformWidget
+from ui.widgets.mode_toggle import ModeToggle
 
 if TYPE_CHECKING:
     from menubar.app import MenuBarApp
@@ -90,6 +92,7 @@ class LiveView(QWidget):
         self._active_question_id: Optional[str] = None
         self._final_transcripts: list[TranscriptEntry] = []
         self._partial_entry: Optional[TranscriptEntry] = None
+        self._whisper_thread: Optional[WhisperTranscriptionThread] = None
 
         self.setStyleSheet(STYLE_SHEET)
         self._setup_ui()
@@ -223,7 +226,6 @@ class LiveView(QWidget):
 
         self._listening_bar = QWidget()
         self._listening_bar.setVisible(False)
-        self._listening_bar.setCursor(Qt.CursorShape.PointingHandCursor)
         listening_layout = QHBoxLayout(self._listening_bar)
         listening_layout.setContentsMargins(10, 8, 10, 8)
         listening_layout.setSpacing(6)
@@ -231,15 +233,48 @@ class LiveView(QWidget):
         self._listening_icon = QLabel('\U0001f3a7')
         listening_layout.addWidget(self._listening_icon)
 
-        self._listening_label = QLabel('Listening...')
-        self._listening_label.setStyleSheet(f'color: {RECORDING_COLOR}; font-weight: 500;')
-        listening_layout.addWidget(self._listening_label)
+        self._mode_toggle = ModeToggle()
+        self._mode_toggle.mode_changed.connect(self._on_mode_changed)
+        listening_layout.addWidget(self._mode_toggle)
+
+        self._listening_stack = QStackedWidget()
 
         self._listening_text = QLabel('')
         self._listening_text.setStyleSheet(f'color: {TEXT_SECONDARY};')
         self._listening_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._listening_text.setWordWrap(False)
-        listening_layout.addWidget(self._listening_text, 1)
+        self._listening_stack.addWidget(self._listening_text)
+
+        self._waveform = WaveformWidget()
+        self._listening_stack.addWidget(self._waveform)
+
+        self._listening_stack.setCurrentIndex(0)
+        listening_layout.addWidget(self._listening_stack, 1)
+
+        stop_btn = QPushButton()
+        stop_btn.setObjectName('iconBtn')
+        stop_btn.setIcon(qta.icon('mdi.stop', color='#888888'))
+        stop_btn.setFixedSize(24, 24)
+        stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        stop_btn.clicked.connect(self._toggle_recording)
+        listening_layout.addWidget(stop_btn)
+
+        self._transcribe_btn = QPushButton('Transcribe')
+        self._transcribe_btn.setFixedHeight(22)
+        self._transcribe_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._transcribe_btn.setStyleSheet(f'''
+            QPushButton {{
+                background-color: {ACCENT};
+                border: none;
+                border-radius: 4px;
+                padding: 0 8px;
+                color: white;
+                font-size: 11px;
+            }}
+        ''')
+        self._transcribe_btn.setVisible(False)
+        self._transcribe_btn.clicked.connect(self._on_transcribe_clicked)
+        listening_layout.addWidget(self._transcribe_btn)
 
         self._listening_bar.setStyleSheet(f'''
             QWidget {{
@@ -248,8 +283,6 @@ class LiveView(QWidget):
             }}
         ''')
         layout.addWidget(self._listening_bar)
-
-        self._listening_bar.mousePressEvent = lambda e: self._toggle_recording()
 
         return self._transcript_container
 
@@ -369,12 +402,70 @@ class LiveView(QWidget):
         self._record_btn.setVisible(False)
         self._listening_bar.setVisible(True)
         self._listening_text.setText('')
+        self._waveform.clear()
+
+        thread = self.app.audio_service.get_audio_thread()
+        if thread:
+            thread.audio_level.connect(self._on_audio_level)
 
     def _stop_recording(self):
         self.app.audio_service.stop_session()
         self._record_btn.setVisible(True)
         self._listening_bar.setVisible(False)
+        self._waveform.clear()
+        self._mode_toggle.set_mode('live_captions')
         self._start_new_session()
+
+    def _on_mode_changed(self, mode: str):
+        if mode == 'full_transcription':
+            self._listening_stack.setCurrentIndex(1)
+            self._transcribe_btn.setVisible(True)
+            if self.app.audio_service.is_recording():
+                self.app.audio_service.stop_transcribers()
+        else:
+            self._listening_stack.setCurrentIndex(0)
+            self._transcribe_btn.setVisible(False)
+            if self.app.audio_service.is_recording():
+                self.app.audio_service.start_transcribers()
+
+    def _on_audio_level(self, mic_rms: float, system_rms: float):
+        self._waveform.push_levels(mic_rms, system_rms)
+
+    def _on_transcribe_clicked(self):
+        self._launch_whisper()
+
+    def _launch_whisper(self, on_complete=None):
+        if self._whisper_thread and self._whisper_thread.isRunning():
+            return
+        if not self._session:
+            return
+        mic_path, system_path = self.app.audio_service.get_recording_paths()
+
+        self._whisper_thread = WhisperTranscriptionThread(
+            self.app.whisper_service,
+            self._session.id,
+            mic_path,
+            system_path,
+            self._session.created_at
+        )
+        self._transcribe_btn.setText('Transcribing...')
+        self._transcribe_btn.setEnabled(False)
+
+        def handle_complete(entries):
+            self._on_whisper_complete(entries)
+            if on_complete:
+                on_complete()
+
+        self._whisper_thread.transcript_ready.connect(handle_complete)
+        self._whisper_thread.start()
+
+    def _on_whisper_complete(self, entries: list):
+        self._final_transcripts = entries
+        for entry in entries:
+            self.app.audio_service.transcript_repo.create(entry)
+        self._whisper_thread = None
+        self._transcribe_btn.setText('Transcribe')
+        self._transcribe_btn.setEnabled(True)
 
     def _on_transcript(self, entry: TranscriptEntry, is_final: bool):
         if is_final:
@@ -385,6 +476,8 @@ class LiveView(QWidget):
         last = entry.text
         if len(last) > 60:
             last = '...' + last[-57:]
+        color = USER_COLOR if entry.speaker == SpeakerType.USER else TEXT_SECONDARY
+        self._listening_text.setStyleSheet(f'color: {color};')
         self._listening_text.setText(last)
 
     def load_questions(self, brain_id: str):
@@ -419,6 +512,14 @@ class LiveView(QWidget):
         self._execute_query(text, QueryType.FREEFORM)
 
     def _execute_query(self, query_text: str, query_type: QueryType, question_id: str = None):
+        if self._mode_toggle.current_mode() == 'full_transcription' and self.app.audio_service.is_recording():
+            self._launch_whisper(
+                on_complete=lambda: self._do_execute_query(query_text, query_type, question_id)
+            )
+            return
+        self._do_execute_query(query_text, query_type, question_id)
+
+    def _do_execute_query(self, query_text: str, query_type: QueryType, question_id: str = None):
         brain = self._active_brain
         if not brain or not self._session:
             return
