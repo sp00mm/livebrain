@@ -103,6 +103,8 @@ class AudioThread(QThread):
             self._system_transcriber.feed_audio(audio_data)
 
         floats = struct.unpack(f'{len(audio_data) // 4}f', audio_data)
+        self._latest_system_rms = (sum(f * f for f in floats) / len(floats)) ** 0.5
+
         samples_per_chunk = self.CHUNK_MS * self.SAMPLE_RATE_KHZ
 
         for i in range(0, len(floats), samples_per_chunk):
@@ -117,8 +119,6 @@ class AudioThread(QThread):
                 self._chunks_since_active = 0
             else:
                 self._chunks_since_active += 1
-
-        self._latest_system_rms = rms
 
     def stop_transcribers(self):
         self._mic_transcriber.stop()
