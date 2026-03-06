@@ -186,4 +186,39 @@ TEMPLATES: dict[str, Template] = {
             'in real time, identify logical fallacies, and suggest counterarguments.'
         ),
     ),
+    'lecture': Template(
+        key='lecture',
+        name='Lecture',
+        description='Learn more in class',
+        steps=[
+            TemplateStep(
+                key='course_materials',
+                label='Course Materials',
+                description='Select a folder with slides, syllabi, textbooks, etc.',
+                input_type='folder',
+            ),
+            TemplateStep(
+                key='notes',
+                label='Your Notes',
+                description="Anything you want to add — topic, what you're struggling with, etc.",
+                input_type='text',
+            ),
+        ],
+        questions=[
+            'Explain what they just said in simpler terms',
+            'How does this connect to what was covered earlier?',
+            "What's a good question to ask about this?",
+            'Summarize the lecture so far',
+            'What should I write down from that?',
+        ],
+        system_prompt_template=(
+            'You are a tutor helping a student during a live lecture. '
+            'Be concise and clear.\n\n'
+            '{notes}'
+        ),
+        system_context=(
+            'You are helping a student understand a lecture in real time. '
+            'Simplify concepts, connect ideas, and suggest questions.'
+        ),
+    ),
 }

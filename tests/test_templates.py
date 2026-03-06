@@ -10,8 +10,8 @@ from services.database import QuestionRepository, ResourceRepository
 
 class TestTemplateDefinitions:
 
-    def test_all_four_templates_defined(self):
-        assert set(TEMPLATES.keys()) == {'interview', 'standup', 'sales_call', 'live_debate'}
+    def test_all_templates_defined(self):
+        assert set(TEMPLATES.keys()) == {'interview', 'standup', 'sales_call', 'live_debate', 'lecture'}
 
     def test_templates_have_required_fields(self):
         for key, t in TEMPLATES.items():
