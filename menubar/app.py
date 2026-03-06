@@ -12,6 +12,7 @@ from services.updater import Updater
 from services.audio_service import AudioService
 from services.llm import LLMService
 from services.template_service import TemplateService
+from services.whisper_service import WhisperTranscriptionService
 
 from .status_bar import StatusBarController
 from .hotkeys import GlobalHotkeyManager
@@ -40,6 +41,7 @@ class MenuBarApp:
         self.audio_service = AudioService(self.db)
         self.llm_service = LLMService(self.db)
         self.template_service = TemplateService(self.db, self.llm_service)
+        self.whisper_service = WhisperTranscriptionService()
         self.embedder: Optional[Embedder] = None
 
         self._init_embedder()
