@@ -3,6 +3,7 @@ from .index_thread import IndexThread, EstimateThread
 from .audio_thread import AudioThread
 from .query_thread import QueryExecutionThread
 from .url_scrape_thread import UrlScrapeThread
+from .whisper_thread import WhisperTranscriptionThread
 
-__all__ = ['ModelDownloadThread', 'IndexThread', 'EstimateThread', 'AudioThread', 'QueryExecutionThread', 'UrlScrapeThread']
+__all__ = ['ModelDownloadThread', 'IndexThread', 'EstimateThread', 'AudioThread', 'QueryExecutionThread', 'UrlScrapeThread', 'WhisperTranscriptionThread']
 
