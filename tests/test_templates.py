@@ -62,6 +62,14 @@ class TestTemplateDefinitions:
         assert q[3] == 'What weak points do they have?'
         assert q[4] == 'Summarize the debate so far'
 
+    def test_lecture_questions(self):
+        q = TEMPLATES['lecture'].questions
+        assert q[0] == 'Explain what they just said in simpler terms'
+        assert q[1] == 'How does this connect to what was covered earlier?'
+        assert q[2] == "What's a good question to ask about this?"
+        assert q[3] == 'Summarize the lecture so far'
+        assert q[4] == 'What should I write down from that?'
+
 
 class TestTemplateService:
 
