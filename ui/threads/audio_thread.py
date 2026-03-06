@@ -11,6 +11,7 @@ from models import SpeakerType
 
 class AudioThread(QThread):
     transcript_update = Signal(str, str, float, bool)  # speaker, text, confidence, is_final
+    audio_level = Signal(float, float)  # mic_rms, system_rms
     status_changed = Signal(str)
     error = Signal(str)
 
@@ -26,6 +27,9 @@ class AudioThread(QThread):
         self._stop_requested = False
         self._system_energy = deque(maxlen=self.HISTORY_SIZE)
         self._chunks_since_active = self.DECAY_CHUNKS + 1
+        self._latest_mic_rms = 0.0
+        self._latest_system_rms = 0.0
+        self._transcribers_active = True
 
         self._storage = AudioStorage(session_id)
         self._mic_capture = MacOSMicCapture()
@@ -59,12 +63,14 @@ class AudioThread(QThread):
         self.status_changed.emit('Recording')
 
         while not self._stop_requested:
+            self.audio_level.emit(self._latest_mic_rms, self._latest_system_rms)
             self.msleep(100)
 
         self._mic_capture.stop()
-        self._mic_transcriber.stop()
         self._system_capture.stop()
-        self._system_transcriber.stop()
+        if self._transcribers_active:
+            self._mic_transcriber.stop()
+            self._system_transcriber.stop()
         self._storage.stop()
 
         self.status_changed.emit('Stopped')
@@ -78,6 +84,10 @@ class AudioThread(QThread):
 
         floats = struct.unpack(f'{len(audio_data) // 4}f', audio_data)
         mic_rms = (sum(f * f for f in floats) / len(floats)) ** 0.5
+        self._latest_mic_rms = mic_rms
+
+        if not self._transcribers_active:
+            return
 
         system_avg = sum(self._system_energy) / len(self._system_energy) if self._system_energy else 0
 
@@ -89,7 +99,8 @@ class AudioThread(QThread):
     def _on_system_audio(self, audio_data: bytes, _timestamp: float):
         int16_data = AudioStorage.convert_float32_to_int16(audio_data)
         self._storage.write_system(int16_data)
-        self._system_transcriber.feed_audio(audio_data)
+        if self._transcribers_active:
+            self._system_transcriber.feed_audio(audio_data)
 
         floats = struct.unpack(f'{len(audio_data) // 4}f', audio_data)
         samples_per_chunk = self.CHUNK_MS * self.SAMPLE_RATE_KHZ
@@ -106,6 +117,24 @@ class AudioThread(QThread):
                 self._chunks_since_active = 0
             else:
                 self._chunks_since_active += 1
+
+        self._latest_system_rms = rms
+
+    def stop_transcribers(self):
+        self._mic_transcriber.stop()
+        self._system_transcriber.stop()
+        self._transcribers_active = False
+
+    def start_transcribers(self):
+        self._mic_transcriber = AppleSpeechTranscriber()
+        self._system_transcriber = SubprocessTranscriber()
+        self._mic_transcriber.start(
+            lambda text, conf, final: self._on_transcript(SpeakerType.USER, text, conf, final)
+        )
+        self._system_transcriber.start(
+            lambda text, conf, final: self._on_transcript(SpeakerType.OTHER, text, conf, final)
+        )
+        self._transcribers_active = True
 
     def _on_transcript(self, speaker: SpeakerType, text: str, confidence: float, is_final: bool):
         self.transcript_update.emit(speaker.value, text, confidence, is_final)
