@@ -1,5 +1,10 @@
 #!/bin/bash
 
+SIGN=false
+if [ "$1" = "--sign" ]; then
+    SIGN=true
+fi
+
 # Read version from version.json (single source of truth)
 VERSION=$(grep '"version"' version.json | cut -d'"' -f4)
 
@@ -61,6 +66,23 @@ create-dmg \
   --app-drop-link 375 160 \
   "LiveBrain-${VERSION}.dmg" \
   "LiveBrain.app"
+
+if [ "$SIGN" = true ]; then
+    IDENTITY="Developer ID Application: Genfit LLC (VWVKXWHBS8)"
+
+    echo "Signing app bundle..."
+    codesign --deep --force --options runtime --sign "$IDENTITY" LiveBrain.app
+
+    echo "Signing DMG..."
+    codesign --force --sign "$IDENTITY" "LiveBrain-${VERSION}.dmg"
+
+    # One-time setup: xcrun notarytool store-credentials "livebrain-notary" --apple-id YOUR_APPLE_ID --team-id VWVKXWHBS8
+    echo "Submitting for notarization..."
+    xcrun notarytool submit "LiveBrain-${VERSION}.dmg" --keychain-profile "livebrain-notary" --wait
+
+    echo "Stapling notarization ticket..."
+    xcrun stapler staple "LiveBrain-${VERSION}.dmg"
+fi
 
 echo ""
 echo "✅ Build complete: LiveBrain-${VERSION}.dmg"
