@@ -559,7 +559,7 @@ class LiveView(QWidget):
                 content=transcript_text,
                 position=pos
             ))
-            self._chat_feed.add_transcript_divider('transcript', transcript_text)
+            self._chat_feed.add_transcript_divider(transcript_text)
             pos += 1
 
         self._feed_repo.create(ChatFeedItem(
