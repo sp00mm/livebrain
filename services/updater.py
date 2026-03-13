@@ -15,23 +15,30 @@ def get_version():
 
 class Updater:
     def check_for_updates(self):
-        try:
-            with urllib.request.urlopen(UPDATE_URL) as response:
-                data = json.loads(response.read().decode())
-                latest_version = data.get("version")
-                download_url = data.get("url")
-                
-                if latest_version and latest_version != get_version():
-                    return {"available": True, "version": latest_version, "url": download_url}
-        except:
-            pass
-        return {"available": False}
+        with urllib.request.urlopen(UPDATE_URL) as response:
+            data = json.loads(response.read().decode())
+            latest_version = data.get('version')
+            download_url = data.get('url')
+            notes = data.get('notes', '')
+
+            if latest_version and latest_version != get_version():
+                return {
+                    'available': True,
+                    'version': latest_version,
+                    'url': download_url,
+                    'notes': notes,
+                }
+        return {'available': False}
     
     def download_update(self, url, callback=None):
         temp_file = os.path.expanduser("~/Downloads/LiveBrain-Update.dmg")
         urllib.request.urlretrieve(url, temp_file, callback)
         return temp_file
     
+    def open_dmg(self, path):
+        import subprocess
+        subprocess.Popen(['open', path])
+
     def download_models(self, dest_dir, progress_callback=None):
         os.makedirs(dest_dir, exist_ok=True)
         zip_path = os.path.join(dest_dir, "models.zip")

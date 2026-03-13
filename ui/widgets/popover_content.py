@@ -44,7 +44,7 @@ class PopoverContent(QWidget):
         self._picker_view = TemplatePickerView()
         self._wizard_view = TemplateWizardView(app.template_service)
         self._brain_edit_view = BrainEditView(app.db)
-        self._settings_view = SettingsView(app.db)
+        self._settings_view = SettingsView(app.db, updater=app.updater)
         self._welcome_view = WelcomeView()
         self._api_key_view = ApiKeyView()
         self._session_history_view = SessionHistoryView(app.db)
@@ -154,3 +154,6 @@ class PopoverContent(QWidget):
 
     def set_detached(self, detached: bool):
         self._live_view.set_detached(detached)
+
+    def show_update(self, info: dict):
+        self._settings_view.show_update(info)

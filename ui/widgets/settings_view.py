@@ -1,22 +1,28 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLineEdit, QLabel, QComboBox
+    QLineEdit, QLabel, QComboBox, QFrame
 )
 from PySide6.QtCore import Signal
 
 from services.database import Database, UserSettingsRepository
 from services.secrets import secrets
+from services.updater import get_version
 from ui.styles import (
-    STYLE_SHEET, TEXT_PRIMARY, TEXT_SECONDARY, ACCENT, FONT_SIZE
+    STYLE_SHEET, TEXT_PRIMARY, TEXT_SECONDARY, ACCENT,
+    ACCENT_BORDER, FONT_SIZE, BG_CARD
 )
+from ui.threads import UpdateDownloadThread
 
 
 class SettingsView(QWidget):
     navigate_back = Signal()
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, updater=None):
         super().__init__()
         self.settings_repo = UserSettingsRepository(db)
+        self._updater = updater
+        self._update_info = None
+        self._download_thread = None
         self.setStyleSheet(STYLE_SHEET)
         self._build_ui()
         self._load()
@@ -60,10 +66,39 @@ class SettingsView(QWidget):
         self._mic_combo.addItem('System Default')
         layout.addWidget(self._mic_combo)
 
+        self._update_card = QFrame()
+        self._update_card.setStyleSheet(
+            f'QFrame {{ background-color: {BG_CARD}; border: 1px solid {ACCENT_BORDER}; border-radius: 8px; }}'
+        )
+        self._update_card.setVisible(False)
+        update_layout = QVBoxLayout(self._update_card)
+        update_layout.setContentsMargins(12, 10, 12, 10)
+        update_layout.setSpacing(6)
+
+        self._update_title = QLabel()
+        self._update_title.setStyleSheet(f'color: {ACCENT}; font-weight: 600; font-size: {FONT_SIZE}; border: none;')
+        update_layout.addWidget(self._update_title)
+
+        self._update_notes = QLabel()
+        self._update_notes.setWordWrap(True)
+        self._update_notes.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px; border: none;')
+        update_layout.addWidget(self._update_notes)
+
+        self._update_btn = QPushButton('Download Update')
+        self._update_btn.setObjectName('downloadBtn')
+        self._update_btn.clicked.connect(self._download_update)
+        update_layout.addWidget(self._update_btn)
+
+        layout.addWidget(self._update_card)
+
+        version_label = QLabel(f'v{get_version()}')
+        version_label.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 11px;')
+        layout.addWidget(version_label)
+
         layout.addStretch()
 
         save_btn = QPushButton('Save')
-        save_btn.setObjectName('downloadBtn')
+        save_btn.setObjectName('primaryBtn')
         save_btn.clicked.connect(self._save)
         layout.addWidget(save_btn)
 
@@ -91,3 +126,27 @@ class SettingsView(QWidget):
         device = self._mic_combo.currentText()
         settings.default_input_device = device if device != 'System Default' else None
         self.settings_repo.update(settings)
+
+    def show_update(self, info: dict):
+        self._update_info = info
+        self._update_title.setText(f'Update Available — v{info["version"]}')
+        self._update_notes.setText(info.get('notes', ''))
+        self._update_btn.setText('Download Update')
+        self._update_btn.setEnabled(True)
+        self._update_card.setVisible(True)
+
+    def _download_update(self):
+        if self._update_info.get('_downloaded_path'):
+            self._updater.open_dmg(self._update_info['_downloaded_path'])
+            return
+
+        self._update_btn.setText('Downloading...')
+        self._update_btn.setEnabled(False)
+        self._download_thread = UpdateDownloadThread(self._updater, self._update_info['url'])
+        self._download_thread.finished.connect(self._on_download_finished)
+        self._download_thread.start()
+
+    def _on_download_finished(self, path: str):
+        self._update_info['_downloaded_path'] = path
+        self._update_btn.setText('Open to Install')
+        self._update_btn.setEnabled(True)

@@ -27,6 +27,7 @@ class MenuBarApp:
     def __init__(self):
         self._init_services()
         self._init_ui()
+        self._check_for_updates()
 
     def _init_services(self):
         self.scanner = FileScanner()
@@ -147,3 +148,12 @@ class MenuBarApp:
             frame = self._status_bar.get_button_frame()
             self._popover.position_below_status_item(frame)
             self._popover.show()
+
+    def _check_for_updates(self):
+        from ui.threads import UpdateCheckThread
+        self._update_thread = UpdateCheckThread(self.updater)
+        self._update_thread.update_available.connect(self._on_update_available)
+        self._update_thread.start()
+
+    def _on_update_available(self, info: dict):
+        self._content.show_update(info)
