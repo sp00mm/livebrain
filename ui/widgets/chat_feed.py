@@ -1,10 +1,12 @@
 import re
 import subprocess
 
+import qtawesome as qta
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
     QFrame, QSizePolicy, QTextBrowser, QApplication,
-    QPushButton, QCheckBox, QGraphicsOpacityEffect
+    QPushButton, QGraphicsOpacityEffect
 )
 from PySide6.QtCore import Qt, QUrl, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QDesktopServices
@@ -217,63 +219,45 @@ class StatusItem(QLabel):
 
 
 class FeedbackItem(QFrame):
-    rated = Signal(int, bool)
-    dismissed = Signal(bool)
+    rated = Signal(int)
+    dismissed = Signal()
 
-    def __init__(self, show_remember=False, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(f'QFrame {{ background-color: {BG_CARD}; border-radius: 6px; }}')
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(4)
-
-        row = QHBoxLayout()
+        row = QHBoxLayout(self)
+        row.setContentsMargins(10, 4, 10, 4)
         row.setSpacing(6)
 
         prompt = QLabel('How was this session?')
-        prompt.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px;')
+        prompt.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
         row.addWidget(prompt)
 
         row.addStretch()
 
-        for emoji, rating in [('\U0001f44d', 1), ('\U0001f44e', -1)]:
-            btn = QPushButton(emoji)
-            btn.setFixedSize(28, 28)
+        for icon_name, rating in [('fa5s.thumbs-up', 1), ('fa5s.thumbs-down', -1)]:
+            btn = QPushButton()
+            btn.setIcon(qta.icon(icon_name, color=TEXT_DIM))
+            btn.setFixedSize(22, 22)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet('QPushButton { background: transparent; border: none; font-size: 16px; } QPushButton:hover { background-color: #3a3a3a; border-radius: 4px; }')
+            btn.setStyleSheet('QPushButton { background: transparent; border: none; } QPushButton:hover { background-color: #3a3a3a; border-radius: 4px; }')
             btn.clicked.connect(lambda _, r=rating: self._on_rated(r))
             row.addWidget(btn)
 
-        dismiss_btn = QPushButton('\u2715')
-        dismiss_btn.setFixedSize(28, 28)
+        dismiss_btn = QPushButton()
+        dismiss_btn.setIcon(qta.icon('fa5s.times', color=TEXT_DIM))
+        dismiss_btn.setFixedSize(22, 22)
         dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        dismiss_btn.setStyleSheet(f'QPushButton {{ background: transparent; border: none; color: {TEXT_DIM}; font-size: 14px; }} QPushButton:hover {{ color: {TEXT_SECONDARY}; }}')
+        dismiss_btn.setStyleSheet(f'QPushButton {{ background: transparent; border: none; }} QPushButton:hover {{ background-color: #3a3a3a; border-radius: 4px; }}')
         dismiss_btn.clicked.connect(self._on_dismissed)
         row.addWidget(dismiss_btn)
 
-        layout.addLayout(row)
-
-        desc = QLabel('Your rating may send anonymized session data to help improve LiveBrain.')
-        desc.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px;')
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
-
-        self._remember_check = None
-        if show_remember:
-            self._remember_check = QCheckBox('Remember my choice')
-            self._remember_check.setStyleSheet(f'QCheckBox {{ color: {TEXT_DIM}; font-size: 10px; }}')
-            layout.addWidget(self._remember_check)
-
-    def _remember(self) -> bool:
-        return self._remember_check.isChecked() if self._remember_check else False
-
     def _on_rated(self, rating: int):
-        self.rated.emit(rating, self._remember())
+        self.rated.emit(rating)
         self._fade_out()
 
     def _on_dismissed(self):
-        self.dismissed.emit(self._remember())
+        self.dismissed.emit()
         self._fade_out()
 
     def _fade_out(self):
@@ -361,8 +345,8 @@ class ChatFeedWidget(QWidget):
             item.setVisible(False)
             item.deleteLater()
 
-    def add_feedback_item(self, show_remember=False) -> FeedbackItem:
-        item = FeedbackItem(show_remember=show_remember)
+    def add_feedback_item(self) -> FeedbackItem:
+        item = FeedbackItem()
         self._insert_item(item)
         return item
 
