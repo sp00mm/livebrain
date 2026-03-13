@@ -14,7 +14,7 @@ from models import (
     QueryType, StepType, StepStatus, ExecutionStep, AIResponse,
     ChatFeedItem, FeedItemType, generate_id
 )
-from services.database import SessionRepository, ChatFeedItemRepository
+from services.database import SessionRepository, ChatFeedItemRepository, UserSettingsRepository
 from services.conversation import ConversationContextCache
 from ui.styles import (
     STYLE_SHEET, BG_CARD, BG_CARD_HOVER,
@@ -409,12 +409,31 @@ class LiveView(QWidget):
             thread.audio_level.connect(self._on_audio_level)
 
     def _stop_recording(self):
+        recording_session_id = self._session.id if self._session else None
         self.app.audio_service.stop_session()
         self._record_btn.setVisible(True)
         self._listening_bar.setVisible(False)
         self._waveform.clear()
         self._mode_toggle.set_mode('live_captions')
+        if recording_session_id:
+            self._maybe_show_feedback(recording_session_id)
         self._start_new_session()
+
+    def _maybe_show_feedback(self, session_id: str):
+        settings_repo = UserSettingsRepository(self.app.db)
+        settings = settings_repo.get()
+        if settings.feedback_opt_in is False:
+            return
+        show_remember = settings.feedback_opt_in is None
+        from ui.widgets.feedback_dialog import FeedbackDialog
+        dialog = FeedbackDialog(show_remember=show_remember, parent=self)
+        result = dialog.exec()
+        if dialog.rating is not None:
+            self._session_repo.set_rating(session_id, dialog.rating)
+        if dialog.remember:
+            opted_in = dialog.rating is not None
+            settings.feedback_opt_in = opted_in
+            settings_repo.update(settings)
 
     def _on_mode_changed(self, mode: str):
         if mode == 'full_transcription':

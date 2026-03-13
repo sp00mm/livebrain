@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     audio_output_device TEXT,
     is_live INTEGER NOT NULL DEFAULT 0,
     current_brain_id TEXT,
+    rating INTEGER,
     created_at TEXT NOT NULL,
     ended_at TEXT,
     FOREIGN KEY (current_brain_id) REFERENCES brains(id)
@@ -165,6 +166,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     data_directory TEXT,
     max_session_storage_days INTEGER DEFAULT 30,
     onboarding_complete INTEGER DEFAULT 0,
+    feedback_opt_in INTEGER,
     FOREIGN KEY (default_brain_id) REFERENCES brains(id)
 );
 INSERT OR IGNORE INTO user_settings (id) VALUES (1);
