@@ -65,7 +65,7 @@ class SessionPackager:
 class FeedbackClient:
     def __init__(self, server_url: str = None):
         self._url = server_url or os.environ.get(
-            'LIVEBRAIN_FEEDBACK_URL', 'https://207.211.163.42/api/feedback'
+            'LIVEBRAIN_FEEDBACK_URL', 'https://livebrain.app/api/feedback'
         )
 
     def submit(self, package: dict) -> bool:

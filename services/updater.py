@@ -4,7 +4,7 @@ import urllib.request
 import zipfile
 
 # Override with LIVEBRAIN_UPDATE_URL / LIVEBRAIN_MODEL_URL for self-hosted deployments
-UPDATE_URL = os.environ.get('LIVEBRAIN_UPDATE_URL', 'https://207.211.163.42/version.json')
+UPDATE_URL = os.environ.get('LIVEBRAIN_UPDATE_URL', 'https://livebrain.app/version.json')
 MODEL_URL = os.environ.get('LIVEBRAIN_MODEL_URL', 'https://axa3tfnfy6dd.objectstorage.us-chicago-1.oci.customer-oci.com/p/V4u-uKDpP_p2kHbWEZPQZ0sEBe0-qZCqW5i3yu3fK-VC-ZIgCxd8rm7wdK6fL6NV/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip')
 
 def get_version():

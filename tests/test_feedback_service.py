@@ -137,7 +137,7 @@ class TestFeedbackClient:
 
     def test_default_url(self):
         client = FeedbackClient()
-        assert client._url == 'https://207.211.163.42/api/feedback'
+        assert client._url == 'https://livebrain.app/api/feedback'
 
     def test_custom_url(self):
         client = FeedbackClient('https://example.com/feedback')
