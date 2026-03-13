@@ -1,10 +1,3 @@
-"""
-Livebrain Database Service
-
-Handles database initialization, schema management, and provides
-repository classes for each entity.
-"""
-
 import json
 import os
 import sys
@@ -48,15 +41,65 @@ class Database:
         return os.path.join(app_support, "livebrain.db")
 
     def initialize_schema(self):
-        """Initialize database schema from schema.sql."""
-        schema_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'db', 'schema.sql')
-        with open(schema_file, 'r') as f:
-            sql = f.read()
-        for statement in sql.split(';'):
-            statement = statement.strip()
-            if statement:
-                self.conn.execute(statement)
-        self.conn.commit()
+        Migrator(self.conn).run()
+
+
+class Migrator:
+    def __init__(self, conn):
+        self._conn = conn
+        self._migrations_dir = os.path.join(os.path.dirname(__file__), '..', 'db', 'migrations')
+
+    def _has_column(self, table, column):
+        rows = self._conn.execute(f'PRAGMA table_info({table})').fetchall()
+        return any(row[1] == column for row in rows)
+
+    def _execute_statement(self, statement):
+        upper = statement.upper()
+        if 'ALTER' in upper and 'ADD COLUMN' in upper:
+            parts = statement.split()
+            table_idx = next(i for i, p in enumerate(parts) if p.upper() == 'TABLE') + 1
+            col_idx = next(i for i, p in enumerate(parts) if p.upper() == 'COLUMN') + 1
+            if self._has_column(parts[table_idx], parts[col_idx]):
+                return
+        self._conn.execute(statement)
+
+    def run(self):
+        self._conn.execute('''
+            CREATE TABLE IF NOT EXISTS _schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        ''')
+
+        has_tables = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='brains'"
+        ).fetchone()
+        applied = {row[0] for row in self._conn.execute('SELECT version FROM _schema_migrations').fetchall()}
+        if has_tables and 1 not in applied:
+            self._conn.execute('INSERT INTO _schema_migrations (version, name) VALUES (1, ?)', ['001_initial.sql'])
+            applied.add(1)
+        self._conn.commit()
+
+        for filename in sorted(os.listdir(self._migrations_dir)):
+            if not filename.endswith('.sql'):
+                continue
+            version = int(filename.split('_')[0])
+            if version in applied:
+                continue
+
+            with open(os.path.join(self._migrations_dir, filename)) as f:
+                sql = f.read()
+            for statement in sql.split(';'):
+                statement = statement.strip()
+                if statement:
+                    self._execute_statement(statement)
+
+            self._conn.execute(
+                'INSERT INTO _schema_migrations (version, name) VALUES (?, ?)',
+                [version, filename]
+            )
+            self._conn.commit()
 
 
 # =============================================================================
