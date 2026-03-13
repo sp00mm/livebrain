@@ -291,10 +291,6 @@ class AuditInteractionGroup(QFrame):
             layout.addWidget(sep)
 
             meta_parts = [response.model_used]
-            if response.tokens_input:
-                meta_parts.append(f'{response.tokens_input} in')
-            if response.tokens_output:
-                meta_parts.append(f'{response.tokens_output} out')
             meta_parts.append(f'{response.latency_ms}ms')
 
             meta = QLabel(' \u00b7 '.join(meta_parts))
@@ -307,7 +303,7 @@ class AuditWindow(QWidget):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Window)
         self.setFixedSize(600, 700)
-        self.setWindowTitle('Session Audit')
+        self.setWindowTitle('Session Details')
         self.setStyleSheet(STYLE_SHEET + f'\nQWidget {{ background-color: {BG_PRIMARY}; }}')
 
         self._feed_repo = ChatFeedItemRepository(db)
@@ -327,7 +323,7 @@ class AuditWindow(QWidget):
         header = QHBoxLayout()
         header.setSpacing(8)
 
-        title = QLabel('Session Audit')
+        title = QLabel('Session Details')
         title.setStyleSheet(f'color: {TEXT_PRIMARY}; font-weight: 600; font-size: 14px;')
         header.addWidget(title, 1)
 

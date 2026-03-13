@@ -379,7 +379,7 @@ class BrainEditView(QWidget):
         if image_count >= 5:
             QMessageBox.information(
                 self, 'Heads up',
-                f'You have {image_count} images attached. Each image uses a lot of tokens which affects cost.'
+                f'You have {image_count} images attached. Each image requires more processing which increases cost.'
             )
 
     def _add_folder_resource(self, path):
@@ -467,7 +467,7 @@ class BrainEditView(QWidget):
     def _delete_brain(self):
         brains = self.brain_repo.get_all()
         if len(brains) <= 1:
-            QMessageBox.warning(self, 'Cannot Delete', 'You must have at least one brain.')
+            QMessageBox.warning(self, 'Cannot Delete', 'You need at least one assistant.')
             return
         self.brain_repo.delete(self._brain.id)
         self.brain_deleted.emit()

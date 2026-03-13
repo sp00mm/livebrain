@@ -163,7 +163,7 @@ class LiveView(QWidget):
         audit_btn.setIcon(qta.icon('mdi.format-list-bulleted', color='#888888'))
         audit_btn.setFixedSize(24, 24)
         audit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        audit_btn.setToolTip('Session audit')
+        audit_btn.setToolTip('Session details')
         audit_btn.clicked.connect(self._show_audit)
         header.addWidget(audit_btn)
 

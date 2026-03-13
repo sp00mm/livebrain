@@ -12,12 +12,10 @@ from models import FeedItemType
 from ui.styles import (
     BG_CARD, TEXT_SECONDARY, TEXT_DIM,
     FEED_QUESTION_BG, FEED_ANSWER_ACTIVE,
-    FEED_ANSWER_FADED, FEED_STATUS_COLOR, FONT_FAMILY
+    FEED_ANSWER_FADED, FEED_STATUS_COLOR, FONT_FAMILY,
+    TRANSCRIPT_YOU_COLOR, TRANSCRIPT_OTHER_COLOR
 )
 from ui.markdown_renderer import render_markdown
-
-TRANSCRIPT_YOU_COLOR = '#5a9a5a'
-TRANSCRIPT_OTHER_COLOR = '#666666'
 
 
 class TranscriptDividerItem(QFrame):
