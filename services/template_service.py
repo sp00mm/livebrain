@@ -1,11 +1,33 @@
 import urllib.request
-import html2text
+from html.parser import HTMLParser
 
 from models import Brain, Question, Resource, ResourceType
 from services.database import Database, BrainRepository, QuestionRepository, ResourceRepository
 from services.llm import LLMService
 from services.llm.interfaces import Message
 from templates import TEMPLATES
+
+
+class _TextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._parts = []
+        self._skip = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ('script', 'style'):
+            self._skip = True
+
+    def handle_endtag(self, tag):
+        if tag in ('script', 'style'):
+            self._skip = False
+
+    def handle_data(self, data):
+        if not self._skip:
+            self._parts.append(data)
+
+    def get_text(self):
+        return ' '.join(self._parts)
 
 
 class TemplateService:
@@ -51,10 +73,9 @@ class TemplateService:
         with urllib.request.urlopen(req, timeout=10) as resp:
             html = resp.read().decode('utf-8', errors='ignore')
 
-        converter = html2text.HTML2Text()
-        converter.ignore_links = True
-        converter.ignore_images = True
-        text = converter.handle(html)[:8000]
+        extractor = _TextExtractor()
+        extractor.feed(html)
+        text = extractor.get_text()[:8000]
 
         response = self._llm.complete(
             [Message(role='user', content=text)],

@@ -100,11 +100,12 @@ class SubprocessTranscriber(Transcriber):
         self._on_result = None
 
     def _read_results(self):
+        from queue import Empty
         while self._running and self._result_queue:
             try:
                 result = self._result_queue.get(timeout=0.1)
-                if result and self._on_result:
-                    text, confidence, is_final = result
-                    self._on_result(text, confidence, is_final)
-            except:
-                pass
+            except Empty:
+                continue
+            if result and self._on_result:
+                text, confidence, is_final = result
+                self._on_result(text, confidence, is_final)

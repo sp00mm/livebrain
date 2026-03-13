@@ -11,40 +11,41 @@ from PySide6.QtGui import QDesktopServices
 from models import FeedItemType
 from ui.styles import (
     BG_CARD, TEXT_SECONDARY, TEXT_DIM,
-    FEED_DIVIDER, FEED_QUESTION_BG, FEED_ANSWER_ACTIVE,
+    FEED_QUESTION_BG, FEED_ANSWER_ACTIVE,
     FEED_ANSWER_FADED, FEED_STATUS_COLOR, FONT_FAMILY
 )
 from ui.markdown_renderer import render_markdown
+
+TRANSCRIPT_YOU_COLOR = '#5a9a5a'
+TRANSCRIPT_OTHER_COLOR = '#666666'
 
 
 class TranscriptDividerItem(QFrame):
     def __init__(self, text='', parent=None):
         super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 4, 0, 4)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(8, 4, 8, 4)
+        self._layout.setSpacing(2)
+        self._build_lines(text)
 
-        line = QLabel(f'--- {text} ---' if text else '---')
-        line.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        line.setStyleSheet(f'color: {FEED_DIVIDER}; font-size: 11px;')
-        layout.addWidget(line)
+    def _build_lines(self, text: str):
+        if not text:
+            return
+        for line in text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith('You: '):
+                color = TRANSCRIPT_YOU_COLOR
+            elif line.startswith('Other: '):
+                color = TRANSCRIPT_OTHER_COLOR
+            else:
+                color = TEXT_DIM
+            label = QLabel(line)
+            label.setWordWrap(True)
+            label.setStyleSheet(f'color: {color}; font-size: 11px;')
+            self._layout.addWidget(label)
 
-        self._detail = QLabel('')
-        self._detail.setWordWrap(True)
-        self._detail.setVisible(False)
-        self._detail.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px; padding: 4px 8px;')
-        layout.addWidget(self._detail)
-
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._expanded = False
-
-    def set_detail(self, text: str):
-        self._detail.setText(text)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self._detail.text():
-            self._expanded = not self._expanded
-            self._detail.setVisible(self._expanded)
-        super().mousePressEvent(event)
 
 
 class QuestionItem(QFrame):
@@ -245,10 +246,8 @@ class ChatFeedWidget(QWidget):
         vbar.rangeChanged.connect(self._on_range_changed)
         vbar.valueChanged.connect(self._on_scroll)
 
-    def add_transcript_divider(self, text: str = '', detail: str = '') -> TranscriptDividerItem:
+    def add_transcript_divider(self, text: str = '') -> TranscriptDividerItem:
         item = TranscriptDividerItem(text)
-        if detail:
-            item.set_detail(detail)
         self._insert_item(item)
         return item
 
