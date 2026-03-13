@@ -14,7 +14,7 @@ from models import (
     QueryType, StepType, StepStatus, ExecutionStep, AIResponse,
     ChatFeedItem, FeedItemType, generate_id
 )
-from services.database import SessionRepository, ChatFeedItemRepository
+from services.database import SessionRepository, ChatFeedItemRepository, UserSettingsRepository
 from services.conversation import ConversationContextCache
 from ui.styles import (
     STYLE_SHEET, BG_CARD, BG_CARD_HOVER,
@@ -84,6 +84,7 @@ class LiveView(QWidget):
         self._active_brain: Optional[Brain] = None
         self._session: Optional[Session] = None
         self._session_repo = SessionRepository(app.db)
+        self._settings_repo = UserSettingsRepository(app.db)
         self._feed_repo = ChatFeedItemRepository(app.db)
         self._conversation_cache = ConversationContextCache()
         self._active_threads: dict[str, QueryExecutionThread] = {}
@@ -409,12 +410,29 @@ class LiveView(QWidget):
             thread.audio_level.connect(self._on_audio_level)
 
     def _stop_recording(self):
+        recording_session_id = self._session.id if self._session else None
         self.app.audio_service.stop_session()
         self._record_btn.setVisible(True)
         self._listening_bar.setVisible(False)
         self._waveform.clear()
         self._mode_toggle.set_mode('live_captions')
+        if recording_session_id:
+            self._maybe_show_feedback(recording_session_id)
         self._start_new_session()
+
+    def _maybe_show_feedback(self, session_id: str):
+        settings = self._settings_repo.get()
+        if settings.feedback_opt_in is False:
+            return
+        show_remember = settings.feedback_opt_in is None
+        from ui.widgets.feedback_dialog import FeedbackDialog
+        dialog = FeedbackDialog(show_remember=show_remember, parent=self)
+        dialog.exec()
+        if dialog.rating is not None:
+            self._session_repo.set_rating(session_id, dialog.rating)
+        if dialog.remember:
+            settings.feedback_opt_in = dialog.rating is not None
+            self._settings_repo.update(settings)
 
     def _on_mode_changed(self, mode: str):
         if mode == 'full_transcription':

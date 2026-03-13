@@ -439,8 +439,8 @@ class SessionRepository:
     def create(self, session: Session) -> Session:
         self.conn.execute("""
             INSERT INTO sessions (id, name, audio_input_device, audio_output_device,
-                                is_live, current_brain_id, created_at, ended_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                is_live, current_brain_id, rating, created_at, ended_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [
             session.id,
             session.name,
@@ -448,6 +448,7 @@ class SessionRepository:
             session.audio_output_device,
             1 if session.is_live else 0,
             session.current_brain_id,
+            session.rating,
             _dt_to_str(session.created_at),
             _dt_to_str(session.ended_at)
         ])
@@ -506,6 +507,13 @@ class SessionRepository:
         self.conn.commit()
         return True
 
+    def set_rating(self, session_id: str, rating: int) -> None:
+        self.conn.execute(
+            'UPDATE sessions SET rating = ? WHERE id = ?',
+            [rating, session_id]
+        )
+        self.conn.commit()
+
     def _row_to_session(self, row) -> Session:
         return Session(
             id=row[0],
@@ -514,8 +522,9 @@ class SessionRepository:
             audio_output_device=row[3],
             is_live=bool(row[4]),
             current_brain_id=row[5],
-            created_at=_str_to_dt(row[6]),
-            ended_at=_str_to_dt(row[7])
+            rating=row[6],
+            created_at=_str_to_dt(row[7]),
+            ended_at=_str_to_dt(row[8])
         )
 
 
@@ -925,13 +934,15 @@ class UserSettingsRepository:
         row = cursor.fetchone()
         if not row:
             return UserSettings()
+        feedback_val = row[8]
         return UserSettings(
             default_input_device=row[1],
             default_output_device=row[2],
             default_brain_id=row[3],
             data_directory=row[5],
             max_session_storage_days=row[6] or 30,
-            onboarding_complete=bool(row[7])
+            onboarding_complete=bool(row[7]),
+            feedback_opt_in=None if feedback_val is None else bool(feedback_val)
         )
 
     def update(self, settings: UserSettings) -> UserSettings:
@@ -943,7 +954,8 @@ class UserSettingsRepository:
                 preferred_model = '',
                 data_directory = ?,
                 max_session_storage_days = ?,
-                onboarding_complete = ?
+                onboarding_complete = ?,
+                feedback_opt_in = ?
             WHERE id = 1
         ''', [
             settings.default_input_device,
@@ -951,7 +963,8 @@ class UserSettingsRepository:
             settings.default_brain_id,
             settings.data_directory,
             settings.max_session_storage_days,
-            1 if settings.onboarding_complete else 0
+            1 if settings.onboarding_complete else 0,
+            None if settings.feedback_opt_in is None else (1 if settings.feedback_opt_in else 0)
         ])
         self.conn.commit()
         return settings

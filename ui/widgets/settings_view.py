@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLineEdit, QLabel, QComboBox, QFrame
+    QLineEdit, QLabel, QComboBox, QFrame, QCheckBox
 )
 from PySide6.QtCore import Signal
 
@@ -66,6 +66,19 @@ class SettingsView(QWidget):
         self._mic_combo.addItem('System Default')
         layout.addWidget(self._mic_combo)
 
+        self._feedback_check = QCheckBox('Help improve LiveBrain')
+        self._feedback_check.setStyleSheet(f'color: {TEXT_PRIMARY};')
+        layout.addWidget(self._feedback_check)
+
+        feedback_desc = QLabel(
+            'When enabled, you\'ll be asked to rate sessions. '
+            'Rated sessions may have anonymized data sent to help '
+            'improve the product. No audio or files are ever shared.'
+        )
+        feedback_desc.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 11px;')
+        feedback_desc.setWordWrap(True)
+        layout.addWidget(feedback_desc)
+
         self._update_card = QFrame()
         self._update_card.setStyleSheet(
             f'QFrame {{ background-color: {BG_CARD}; border: 1px solid {ACCENT_BORDER}; border-radius: 8px; }}'
@@ -115,6 +128,8 @@ class SettingsView(QWidget):
             if idx >= 0:
                 self._mic_combo.setCurrentIndex(idx)
 
+        self._feedback_check.setChecked(settings.feedback_opt_in is True)
+
     def _save(self):
         key_text = self._key_input.text().strip()
         if key_text:
@@ -125,6 +140,7 @@ class SettingsView(QWidget):
         settings = self.settings_repo.get()
         device = self._mic_combo.currentText()
         settings.default_input_device = device if device != 'System Default' else None
+        settings.feedback_opt_in = self._feedback_check.isChecked()
         self.settings_repo.update(settings)
 
     def show_update(self, info: dict):

@@ -129,6 +129,7 @@ class Session:
     audio_output_device: Optional[str] = None
     is_live: bool = False
     current_brain_id: Optional[str] = None
+    rating: Optional[int] = None
     created_at: datetime = field(default_factory=now)
     ended_at: Optional[datetime] = None
 
@@ -252,3 +253,4 @@ class UserSettings:
     data_directory: Optional[str] = None
     max_session_storage_days: int = 30
     onboarding_complete: bool = False
+    feedback_opt_in: Optional[bool] = None
