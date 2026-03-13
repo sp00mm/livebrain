@@ -2,10 +2,11 @@ import re
 import subprocess
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QScrollArea,
-    QFrame, QSizePolicy, QTextBrowser, QApplication
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
+    QFrame, QSizePolicy, QTextBrowser, QApplication,
+    QPushButton, QCheckBox, QGraphicsOpacityEffect
 )
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QDesktopServices
 
 from models import FeedItemType
@@ -215,6 +216,78 @@ class StatusItem(QLabel):
         self.setStyleSheet(f'color: {FEED_STATUS_COLOR}; font-size: 11px; font-style: italic; padding: 2px 10px;')
 
 
+class FeedbackItem(QFrame):
+    rated = Signal(int, bool)
+    dismissed = Signal(bool)
+
+    def __init__(self, show_remember=False, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f'QFrame {{ background-color: {BG_CARD}; border-radius: 6px; }}')
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+
+        prompt = QLabel('How was this session?')
+        prompt.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px;')
+        row.addWidget(prompt)
+
+        row.addStretch()
+
+        for emoji, rating in [('\U0001f44d', 1), ('\U0001f44e', -1)]:
+            btn = QPushButton(emoji)
+            btn.setFixedSize(28, 28)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet('QPushButton { background: transparent; border: none; font-size: 16px; } QPushButton:hover { background-color: #3a3a3a; border-radius: 4px; }')
+            btn.clicked.connect(lambda _, r=rating: self._on_rated(r))
+            row.addWidget(btn)
+
+        dismiss_btn = QPushButton('\u2715')
+        dismiss_btn.setFixedSize(28, 28)
+        dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dismiss_btn.setStyleSheet(f'QPushButton {{ background: transparent; border: none; color: {TEXT_DIM}; font-size: 14px; }} QPushButton:hover {{ color: {TEXT_SECONDARY}; }}')
+        dismiss_btn.clicked.connect(self._on_dismissed)
+        row.addWidget(dismiss_btn)
+
+        layout.addLayout(row)
+
+        desc = QLabel('Your rating may send anonymized session data to help improve LiveBrain.')
+        desc.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px;')
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        self._remember_check = None
+        if show_remember:
+            self._remember_check = QCheckBox('Remember my choice')
+            self._remember_check.setStyleSheet(f'QCheckBox {{ color: {TEXT_DIM}; font-size: 10px; }}')
+            layout.addWidget(self._remember_check)
+
+    def _remember(self) -> bool:
+        return self._remember_check.isChecked() if self._remember_check else False
+
+    def _on_rated(self, rating: int):
+        self.rated.emit(rating, self._remember())
+        self._fade_out()
+
+    def _on_dismissed(self):
+        self.dismissed.emit(self._remember())
+        self._fade_out()
+
+    def _fade_out(self):
+        effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b'opacity', self)
+        anim.setDuration(300)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(self.deleteLater)
+        anim.start()
+
+
 class ChatFeedWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -287,6 +360,11 @@ class ChatFeedWidget(QWidget):
             item = self._status_items.pop(thread_id)
             item.setVisible(False)
             item.deleteLater()
+
+    def add_feedback_item(self, show_remember=False) -> FeedbackItem:
+        item = FeedbackItem(show_remember=show_remember)
+        self._insert_item(item)
+        return item
 
     def clear_feed(self):
         while self._layout.count() > 1:

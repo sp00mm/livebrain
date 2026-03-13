@@ -425,14 +425,21 @@ class LiveView(QWidget):
         if settings.feedback_opt_in is False:
             return
         show_remember = settings.feedback_opt_in is None
-        from ui.widgets.feedback_dialog import FeedbackDialog
-        dialog = FeedbackDialog(show_remember=show_remember, parent=self)
-        dialog.exec()
-        if dialog.rating is not None:
-            self._session_repo.set_rating(session_id, dialog.rating)
-        if dialog.remember:
-            settings.feedback_opt_in = dialog.rating is not None
-            self._settings_repo.update(settings)
+        item = self._chat_feed.add_feedback_item(show_remember=show_remember)
+
+        def on_rated(rating, remember):
+            self._session_repo.set_rating(session_id, rating)
+            if remember:
+                settings.feedback_opt_in = True
+                self._settings_repo.update(settings)
+
+        def on_dismissed(remember):
+            if remember:
+                settings.feedback_opt_in = False
+                self._settings_repo.update(settings)
+
+        item.rated.connect(on_rated)
+        item.dismissed.connect(on_dismissed)
 
     def _on_mode_changed(self, mode: str):
         if mode == 'full_transcription':
