@@ -1,5 +1,7 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QGridLayout, QPushButton, QLabel, QFrame
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel, QFrame
 from PySide6.QtCore import Qt, Signal
+
+import qtawesome as qta
 
 from ui.styles import BASE_STYLE, ACCENT, TEXT_SECONDARY, BG_CARD, BG_CARD_HOVER, TEXT_PRIMARY, BORDER_COLOR
 from templates import TEMPLATES
@@ -63,6 +65,18 @@ class TemplatePickerView(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(16)
 
+        back_row = QHBoxLayout()
+        self._back_btn = QPushButton()
+        self._back_btn.setObjectName('iconBtn')
+        self._back_btn.setIcon(qta.icon('mdi.arrow-left', color='#888888'))
+        self._back_btn.setFixedSize(24, 24)
+        self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._back_btn.clicked.connect(self.navigate_back.emit)
+        self._back_btn.setVisible(False)
+        back_row.addWidget(self._back_btn)
+        back_row.addStretch()
+        layout.addLayout(back_row)
+
         header = QLabel('What kind of meeting?')
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setStyleSheet('font-size: 22px; font-weight: 700;')
@@ -98,3 +112,6 @@ class TemplatePickerView(QWidget):
         ''')
         custom_btn.clicked.connect(self.custom_selected)
         layout.addWidget(custom_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def set_show_back(self, show: bool):
+        self._back_btn.setVisible(show)

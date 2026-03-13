@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QLabel, QComboBox, QScrollArea, QFrame,
     QSizePolicy, QStackedWidget
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 
 import qtawesome as qta
 
@@ -94,6 +94,7 @@ class LiveView(QWidget):
         self._final_transcripts: list[TranscriptEntry] = []
         self._partial_entry: Optional[TranscriptEntry] = None
         self._whisper_thread: Optional[WhisperTranscriptionThread] = None
+        self._dot_visible = True
 
         self.setStyleSheet(STYLE_SHEET)
         self._setup_ui()
@@ -123,6 +124,10 @@ class LiveView(QWidget):
         self._pop_out_btn.setToolTip('Open in window')
         self._pop_out_btn.clicked.connect(self.pop_out_requested.emit)
         header.addWidget(self._pop_out_btn)
+
+        brain_icon = QLabel()
+        brain_icon.setPixmap(qta.icon('mdi.brain', color=ACCENT).pixmap(18, 18))
+        header.addWidget(brain_icon)
 
         self._brain_combo = QComboBox()
         self._brain_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -231,8 +236,14 @@ class LiveView(QWidget):
         listening_layout.setContentsMargins(10, 8, 10, 8)
         listening_layout.setSpacing(6)
 
-        self._listening_icon = QLabel('\U0001f3a7')
-        listening_layout.addWidget(self._listening_icon)
+        self._recording_dot = QLabel('\u2b24')
+        self._recording_dot.setFixedSize(16, 16)
+        self._recording_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._recording_dot.setStyleSheet(f'color: {RECORDING_COLOR}; font-size: 10px;')
+        self._dot_timer = QTimer(self)
+        self._dot_timer.setInterval(600)
+        self._dot_timer.timeout.connect(self._blink_dot)
+        listening_layout.addWidget(self._recording_dot)
 
         self._mode_toggle = ModeToggle()
         self._mode_toggle.mode_changed.connect(self._on_mode_changed)
@@ -404,6 +415,7 @@ class LiveView(QWidget):
         self._listening_bar.setVisible(True)
         self._listening_text.setText('')
         self._waveform.clear()
+        self._dot_timer.start()
 
         thread = self.app.audio_service.get_audio_thread()
         if thread:
@@ -415,10 +427,17 @@ class LiveView(QWidget):
         self._record_btn.setVisible(True)
         self._listening_bar.setVisible(False)
         self._waveform.clear()
+        self._dot_timer.stop()
+        self._recording_dot.setVisible(True)
+        self._dot_visible = True
         self._mode_toggle.set_mode('live_captions')
         if recording_session_id:
             self._maybe_show_feedback(recording_session_id)
         self._start_new_session()
+
+    def _blink_dot(self):
+        self._dot_visible = not self._dot_visible
+        self._recording_dot.setVisible(self._dot_visible)
 
     def _maybe_show_feedback(self, session_id: str):
         settings = self._settings_repo.get()

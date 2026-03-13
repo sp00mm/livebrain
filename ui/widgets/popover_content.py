@@ -62,7 +62,7 @@ class PopoverContent(QWidget):
         self._set_starting_view()
 
     def _wire_navigation(self):
-        self._live_view.navigate_to_picker.connect(lambda: self._stack.setCurrentIndex(PICKER))
+        self._live_view.navigate_to_picker.connect(self._show_picker_from_live)
         self._live_view.navigate_to_brain_edit.connect(self._show_brain_edit)
         self._live_view.navigate_to_settings.connect(lambda: self._stack.setCurrentIndex(SETTINGS))
         self._live_view.pop_out_requested.connect(self.pop_out_requested)
@@ -109,7 +109,12 @@ class PopoverContent(QWidget):
         self._brain_edit_view.load_new()
         self._stack.setCurrentIndex(BRAIN_EDIT)
 
+    def _show_picker_from_live(self):
+        self._picker_view.set_show_back(True)
+        self._stack.setCurrentIndex(PICKER)
+
     def _on_api_key_submitted(self, key: str):
+        self._picker_view.set_show_back(False)
         self._stack.setCurrentIndex(PICKER)
 
     def _on_brain_created(self, brain_id: str):
