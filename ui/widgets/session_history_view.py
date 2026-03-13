@@ -98,7 +98,7 @@ class SessionHistoryView(QWidget):
         self._export_btn.setIcon(qta.icon('mdi.download', color='#888888'))
         self._export_btn.setFixedSize(24, 24)
         self._export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._export_btn.setToolTip('Export as text')
+        self._export_btn.setToolTip('Export session')
         self._export_btn.setVisible(False)
         self._export_btn.clicked.connect(self._export_transcript)
         header.addWidget(self._export_btn)
@@ -199,30 +199,32 @@ class SessionHistoryView(QWidget):
         self._refresh_list()
 
     def _export_transcript(self):
+        session = self._session_repo.get(self._current_session_id)
         entries = self._transcript_repo.get_by_session(self._current_session_id)
         items = self._feed_repo.get_by_session(self._current_session_id)
 
-        lines = []
+        date_str = session.created_at.strftime('%b %d, %Y  %I:%M %p') if session.created_at else 'Unknown'
+        lines = [f'# Session - {date_str}', '', '## Transcript']
+
         for entry in entries:
             label = 'You' if entry.speaker == SpeakerType.USER else 'Other'
-            lines.append(f'{label}: {entry.text}')
+            lines.append(f'**{label}:** {entry.text}')
 
         qa_lines = []
         for item in items:
             if item.item_type == FeedItemType.QUESTION:
-                qa_lines.append(f'Q: {item.content}')
+                qa_lines.append(f'**Q:** {item.content}')
             elif item.item_type == FeedItemType.ANSWER:
-                qa_lines.append(f'A: {item.content}')
+                qa_lines.append(f'**A:** {item.content}')
 
         if qa_lines:
-            lines.append('')
-            lines.append('--- Questions & Answers ---')
+            lines.extend(['', '## Questions & Answers'])
             lines.extend(qa_lines)
 
         text = '\n\n'.join(lines)
 
         path, _ = QFileDialog.getSaveFileName(
-            self, 'Export Session', 'session_transcript.txt', 'Text Files (*.txt)'
+            self, 'Export Session', 'session-export.md', 'Markdown Files (*.md)'
         )
         if path:
             with open(path, 'w') as f:
