@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from ui.styles import (
-    STYLE_SHEET, BG_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY,
+    STYLE_SHEET, BG_SECONDARY, BG_BUTTON, TEXT_PRIMARY, TEXT_SECONDARY,
     BG_CARD, BG_CARD_HOVER, ACCENT
 )
 
@@ -28,7 +28,7 @@ class FeedbackDialog(QDialog):
         card.setStyleSheet(f'''
             background-color: {BG_SECONDARY};
             border-radius: 12px;
-            border: 1px solid #3a3a3a;
+            border: 1px solid {BG_BUTTON};
         ''')
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(20, 20, 20, 16)
@@ -51,7 +51,7 @@ class FeedbackDialog(QDialog):
             btn.setStyleSheet(f'''
                 QPushButton {{
                     background-color: {BG_CARD};
-                    border: 1px solid #3a3a3a;
+                    border: 1px solid {BG_BUTTON};
                     border-radius: 28px;
                     font-size: 24px;
                 }}

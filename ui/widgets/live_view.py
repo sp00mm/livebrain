@@ -84,6 +84,7 @@ class LiveView(QWidget):
         self._active_brain: Optional[Brain] = None
         self._session: Optional[Session] = None
         self._session_repo = SessionRepository(app.db)
+        self._settings_repo = UserSettingsRepository(app.db)
         self._feed_repo = ChatFeedItemRepository(app.db)
         self._conversation_cache = ConversationContextCache()
         self._active_threads: dict[str, QueryExecutionThread] = {}
@@ -420,20 +421,18 @@ class LiveView(QWidget):
         self._start_new_session()
 
     def _maybe_show_feedback(self, session_id: str):
-        settings_repo = UserSettingsRepository(self.app.db)
-        settings = settings_repo.get()
+        settings = self._settings_repo.get()
         if settings.feedback_opt_in is False:
             return
         show_remember = settings.feedback_opt_in is None
         from ui.widgets.feedback_dialog import FeedbackDialog
         dialog = FeedbackDialog(show_remember=show_remember, parent=self)
-        result = dialog.exec()
+        dialog.exec()
         if dialog.rating is not None:
             self._session_repo.set_rating(session_id, dialog.rating)
         if dialog.remember:
-            opted_in = dialog.rating is not None
-            settings.feedback_opt_in = opted_in
-            settings_repo.update(settings)
+            settings.feedback_opt_in = dialog.rating is not None
+            self._settings_repo.update(settings)
 
     def _on_mode_changed(self, mode: str):
         if mode == 'full_transcription':
