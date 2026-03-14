@@ -47,7 +47,7 @@ class PopoverContent(QWidget):
         self._settings_view = SettingsView(app.db, updater=app.updater)
         self._welcome_view = WelcomeView()
         self._api_key_view = ApiKeyView()
-        self._session_history_view = SessionHistoryView(app.db)
+        self._session_history_view = SessionHistoryView(app.db, app.whisper_service)
 
         self._stack.addWidget(self._live_view)       # 0
         self._stack.addWidget(self._picker_view)     # 1

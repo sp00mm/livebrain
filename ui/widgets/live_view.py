@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QLabel, QComboBox, QScrollArea, QFrame,
-    QSizePolicy, QStackedWidget
+    QSizePolicy, QFileDialog
 )
 from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtWidgets import QGraphicsOpacityEffect
@@ -17,14 +17,13 @@ from models import (
 )
 from services.database import SessionRepository, ChatFeedItemRepository, UserSettingsRepository
 from services.conversation import ConversationContextCache
+from services.export_service import build_export_markdown
 from ui.styles import (
     STYLE_SHEET, BG_CARD, BG_CARD_HOVER,
     TEXT_SECONDARY, RECORDING_COLOR, ACCENT, USER_COLOR
 )
-from ui.threads import QueryExecutionThread, WhisperTranscriptionThread
+from ui.threads import QueryExecutionThread
 from ui.widgets.chat_feed import ChatFeedWidget
-from ui.widgets.waveform_widget import WaveformWidget
-from ui.widgets.mode_toggle import ModeToggle
 
 if TYPE_CHECKING:
     from menubar.app import MenuBarApp
@@ -94,7 +93,6 @@ class LiveView(QWidget):
         self._active_question_id: Optional[str] = None
         self._final_transcripts: list[TranscriptEntry] = []
         self._partial_entry: Optional[TranscriptEntry] = None
-        self._whisper_thread: Optional[WhisperTranscriptionThread] = None
         self.setStyleSheet(STYLE_SHEET)
         self._setup_ui()
         self.refresh_brains()
@@ -250,23 +248,11 @@ class LiveView(QWidget):
         self._dot_anim.setLoopCount(-1)
         listening_layout.addWidget(self._recording_dot)
 
-        self._mode_toggle = ModeToggle()
-        self._mode_toggle.mode_changed.connect(self._on_mode_changed)
-        listening_layout.addWidget(self._mode_toggle)
-
-        self._listening_stack = QStackedWidget()
-
         self._listening_text = QLabel('')
         self._listening_text.setStyleSheet(f'color: {TEXT_SECONDARY};')
         self._listening_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._listening_text.setWordWrap(False)
-        self._listening_stack.addWidget(self._listening_text)
-
-        self._waveform = WaveformWidget()
-        self._listening_stack.addWidget(self._waveform)
-
-        self._listening_stack.setCurrentIndex(0)
-        listening_layout.addWidget(self._listening_stack, 1)
+        listening_layout.addWidget(self._listening_text, 1)
 
         stop_btn = QPushButton()
         stop_btn.setObjectName('iconBtn')
@@ -275,23 +261,6 @@ class LiveView(QWidget):
         stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         stop_btn.clicked.connect(self._toggle_recording)
         listening_layout.addWidget(stop_btn)
-
-        self._transcribe_btn = QPushButton('Transcribe')
-        self._transcribe_btn.setFixedHeight(22)
-        self._transcribe_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._transcribe_btn.setStyleSheet(f'''
-            QPushButton {{
-                background-color: {ACCENT};
-                border: none;
-                border-radius: 4px;
-                padding: 0 8px;
-                color: white;
-                font-size: 11px;
-            }}
-        ''')
-        self._transcribe_btn.setVisible(False)
-        self._transcribe_btn.clicked.connect(self._on_transcribe_clicked)
-        listening_layout.addWidget(self._transcribe_btn)
 
         self._listening_bar.setStyleSheet(f'''
             QWidget {{
@@ -419,23 +388,17 @@ class LiveView(QWidget):
         self._record_btn.setVisible(False)
         self._listening_bar.setVisible(True)
         self._listening_text.setText('')
-        self._waveform.clear()
         self._dot_anim.start()
-
-        thread = self.app.audio_service.get_audio_thread()
-        if thread:
-            thread.audio_level.connect(self._on_audio_level)
 
     def _stop_recording(self):
         recording_session_id = self._session.id if self._session else None
         self.app.audio_service.stop_session()
         self._record_btn.setVisible(True)
         self._listening_bar.setVisible(False)
-        self._waveform.clear()
         self._dot_anim.stop()
         self._dot_opacity.setOpacity(1.0)
-        self._mode_toggle.set_mode('live_captions')
         if recording_session_id:
+            self._add_export_item(recording_session_id)
             self._maybe_show_feedback(recording_session_id)
         self._start_new_session()
 
@@ -447,56 +410,18 @@ class LiveView(QWidget):
         item.rated.connect(lambda rating: self._session_repo.set_rating(session_id, rating))
         item.dismissed.connect(lambda: None)
 
-    def _on_mode_changed(self, mode: str):
-        if mode == 'full_transcription':
-            self._listening_stack.setCurrentIndex(1)
-            self._transcribe_btn.setVisible(True)
-            if self.app.audio_service.is_recording():
-                self.app.audio_service.stop_transcribers()
-        else:
-            self._listening_stack.setCurrentIndex(0)
-            self._transcribe_btn.setVisible(False)
-            if self.app.audio_service.is_recording():
-                self.app.audio_service.start_transcribers()
+    def _add_export_item(self, session_id: str):
+        item = self._chat_feed.add_export_item()
+        item.clicked.connect(lambda sid=session_id: self._export_session(sid))
 
-    def _on_audio_level(self, mic_rms: float, system_rms: float):
-        self._waveform.push_levels(mic_rms, system_rms)
-
-    def _on_transcribe_clicked(self):
-        self._launch_whisper()
-
-    def _launch_whisper(self, on_complete=None):
-        if self._whisper_thread and self._whisper_thread.isRunning():
-            return
-        if not self._session:
-            return
-        mic_path, system_path = self.app.audio_service.get_recording_paths()
-
-        self._whisper_thread = WhisperTranscriptionThread(
-            self.app.whisper_service,
-            self._session.id,
-            mic_path,
-            system_path,
-            self._session.created_at
+    def _export_session(self, session_id: str):
+        text = build_export_markdown(session_id, self.app.db)
+        path, _ = QFileDialog.getSaveFileName(
+            self, 'Export Session', 'session-export.md', 'Markdown Files (*.md)'
         )
-        self._transcribe_btn.setText('Transcribing...')
-        self._transcribe_btn.setEnabled(False)
-
-        def handle_complete(entries):
-            self._on_whisper_complete(entries)
-            if on_complete:
-                on_complete()
-
-        self._whisper_thread.transcript_ready.connect(handle_complete)
-        self._whisper_thread.start()
-
-    def _on_whisper_complete(self, entries: list):
-        self._final_transcripts = entries
-        for entry in entries:
-            self.app.audio_service.transcript_repo.create(entry)
-        self._whisper_thread = None
-        self._transcribe_btn.setText('Transcribe')
-        self._transcribe_btn.setEnabled(True)
+        if path:
+            with open(path, 'w') as f:
+                f.write(text)
 
     def _on_transcript(self, entry: TranscriptEntry, is_final: bool):
         if is_final:
@@ -527,7 +452,7 @@ class LiveView(QWidget):
 
     def _on_question_clicked(self, question: Question):
         self._set_active_question(question.id)
-        self._execute_query(question.text, QueryType.PRESET, question.id)
+        self._do_execute_query(question.text, QueryType.PRESET, question.id)
 
     def _set_active_question(self, question_id: Optional[str]):
         self._active_question_id = question_id
@@ -540,15 +465,7 @@ class LiveView(QWidget):
             return
         self._input.clear()
         self._set_active_question(None)
-        self._execute_query(text, QueryType.FREEFORM)
-
-    def _execute_query(self, query_text: str, query_type: QueryType, question_id: str = None):
-        if self._mode_toggle.current_mode() == 'full_transcription' and self.app.audio_service.is_recording():
-            self._launch_whisper(
-                on_complete=lambda: self._do_execute_query(query_text, query_type, question_id)
-            )
-            return
-        self._do_execute_query(query_text, query_type, question_id)
+        self._do_execute_query(text, QueryType.FREEFORM)
 
     def _do_execute_query(self, query_text: str, query_type: QueryType, question_id: str = None):
         brain = self._active_brain

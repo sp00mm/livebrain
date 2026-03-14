@@ -272,6 +272,31 @@ class FeedbackItem(QFrame):
         anim.start()
 
 
+class ExportItem(QFrame):
+    clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(10, 4, 10, 4)
+        row.setSpacing(6)
+
+        btn = QPushButton()
+        btn.setIcon(qta.icon('mdi.file-export', color=TEXT_DIM))
+        btn.setFixedSize(22, 22)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet('QPushButton { background: transparent; border: none; } QPushButton:hover { background-color: #3a3a3a; border-radius: 4px; }')
+        btn.clicked.connect(self.clicked.emit)
+        row.addWidget(btn)
+
+        label = QLabel('Save transcript')
+        label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
+        row.addWidget(label)
+
+        row.addStretch()
+
+
 class ChatFeedWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -347,6 +372,11 @@ class ChatFeedWidget(QWidget):
 
     def add_feedback_item(self) -> FeedbackItem:
         item = FeedbackItem()
+        self._insert_item(item)
+        return item
+
+    def add_export_item(self) -> ExportItem:
+        item = ExportItem()
         self._insert_item(item)
         return item
 

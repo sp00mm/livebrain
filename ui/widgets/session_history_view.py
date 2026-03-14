@@ -6,12 +6,15 @@ from PySide6.QtCore import Qt, Signal
 
 import qtawesome as qta
 
-from models import Session, FeedItemType, SpeakerType
+from audio.storage import AudioStorage
+from models import Session
 from services.database import Database, SessionRepository, ChatFeedItemRepository, TranscriptEntryRepository
+from services.export_service import build_export_markdown
 from ui.styles import (
     STYLE_SHEET, BG_CARD, BG_CARD_HOVER,
-    TEXT_PRIMARY, TEXT_SECONDARY
+    TEXT_PRIMARY, TEXT_SECONDARY, ACCENT
 )
+from ui.threads import WhisperTranscriptionThread
 from ui.widgets.chat_feed import ChatFeedWidget
 
 
@@ -59,9 +62,10 @@ class SessionCard(QFrame):
 class SessionHistoryView(QWidget):
     navigate_back = Signal()
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, whisper_service):
         super().__init__()
         self._db = db
+        self._whisper_service = whisper_service
         self._session_repo = SessionRepository(db)
         self._feed_repo = ChatFeedItemRepository(db)
         self._transcript_repo = TranscriptEntryRepository(db)
@@ -69,6 +73,7 @@ class SessionHistoryView(QWidget):
         self._current_session_id = None
         self._exclude_session_id = None
         self._in_feed_view = False
+        self._whisper_thread = None
 
         self.setStyleSheet(STYLE_SHEET)
         self._setup_ui()
@@ -92,6 +97,23 @@ class SessionHistoryView(QWidget):
         title = QLabel('Session History')
         title.setStyleSheet(f'color: {TEXT_PRIMARY}; font-weight: 600; font-size: 14px;')
         header.addWidget(title, 1)
+
+        self._transcribe_btn = QPushButton('Transcribe')
+        self._transcribe_btn.setFixedHeight(22)
+        self._transcribe_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._transcribe_btn.setStyleSheet(f'''
+            QPushButton {{
+                background-color: {ACCENT};
+                border: none;
+                border-radius: 4px;
+                padding: 0 8px;
+                color: white;
+                font-size: 11px;
+            }}
+        ''')
+        self._transcribe_btn.setVisible(False)
+        self._transcribe_btn.clicked.connect(self._on_transcribe_clicked)
+        header.addWidget(self._transcribe_btn)
 
         self._export_btn = QPushButton()
         self._export_btn.setObjectName('iconBtn')
@@ -138,6 +160,7 @@ class SessionHistoryView(QWidget):
         self._in_feed_view = False
         self._feed.setVisible(False)
         self._list_scroll.setVisible(True)
+        self._transcribe_btn.setVisible(False)
         self._export_btn.setVisible(False)
         self._delete_btn.setVisible(False)
         self._refresh_list()
@@ -152,6 +175,7 @@ class SessionHistoryView(QWidget):
         self._in_feed_view = False
         self._feed.setVisible(False)
         self._list_scroll.setVisible(True)
+        self._transcribe_btn.setVisible(False)
         self._export_btn.setVisible(False)
         self._delete_btn.setVisible(False)
         self._current_session_id = None
@@ -188,6 +212,7 @@ class SessionHistoryView(QWidget):
         items = self._feed_repo.get_by_session(session.id)
         self._list_scroll.setVisible(False)
         self._feed.setVisible(True)
+        self._transcribe_btn.setVisible(True)
         self._export_btn.setVisible(True)
         self._delete_btn.setVisible(True)
         self._feed.load_from_items(items)
@@ -199,33 +224,37 @@ class SessionHistoryView(QWidget):
         self._refresh_list()
 
     def _export_transcript(self):
-        session = self._session_repo.get(self._current_session_id)
-        entries = self._transcript_repo.get_by_session(self._current_session_id)
-        items = self._feed_repo.get_by_session(self._current_session_id)
-
-        date_str = session.created_at.strftime('%b %d, %Y  %I:%M %p') if session.created_at else 'Unknown'
-        lines = [f'# Session - {date_str}', '', '## Transcript']
-
-        for entry in entries:
-            label = 'You' if entry.speaker == SpeakerType.USER else 'Other'
-            lines.append(f'**{label}:** {entry.text}')
-
-        qa_lines = []
-        for item in items:
-            if item.item_type == FeedItemType.QUESTION:
-                qa_lines.append(f'**Q:** {item.content}')
-            elif item.item_type == FeedItemType.ANSWER:
-                qa_lines.append(f'**A:** {item.content}')
-
-        if qa_lines:
-            lines.extend(['', '## Questions & Answers'])
-            lines.extend(qa_lines)
-
-        text = '\n\n'.join(lines)
-
+        text = build_export_markdown(self._current_session_id, self._db)
         path, _ = QFileDialog.getSaveFileName(
             self, 'Export Session', 'session-export.md', 'Markdown Files (*.md)'
         )
         if path:
             with open(path, 'w') as f:
                 f.write(text)
+
+    def _on_transcribe_clicked(self):
+        if self._whisper_thread and self._whisper_thread.isRunning():
+            return
+        session = self._session_repo.get(self._current_session_id)
+        storage = AudioStorage(session.id)
+        mic_path = storage.get_mic_path()
+        system_path = storage.get_system_path()
+
+        self._whisper_thread = WhisperTranscriptionThread(
+            self._whisper_service,
+            session.id,
+            mic_path,
+            system_path,
+            session.created_at
+        )
+        self._transcribe_btn.setText('Transcribing...')
+        self._transcribe_btn.setEnabled(False)
+        self._whisper_thread.transcript_ready.connect(self._on_whisper_complete)
+        self._whisper_thread.start()
+
+    def _on_whisper_complete(self, entries: list):
+        for entry in entries:
+            self._transcript_repo.create(entry)
+        self._whisper_thread = None
+        self._transcribe_btn.setText('Transcribe')
+        self._transcribe_btn.setEnabled(True)
