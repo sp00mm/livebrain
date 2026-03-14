@@ -48,6 +48,7 @@ class IndexStatus(Enum):
 class StepType(Enum):
     LISTENING = 'listening'
     SEARCHING_FILES = 'searching_files'
+    READING_FILE = 'reading_file'
     GENERATING = 'generating'
 
 

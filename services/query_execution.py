@@ -292,6 +292,7 @@ class QueryExecutionService:
         parts.append('You have access to these capabilities:')
         if has_folders:
             parts.append('- Search files: search through scanned folders for relevant content. Always search first, never ask what to look for.')
+            parts.append('- Read file: read the full contents of a specific file from the available files above')
         parts.append('- Web search: search the internet for current information')
         parts.append('- Code interpreter: run Python code for calculations or data analysis')
         sections.append('\n'.join(parts))

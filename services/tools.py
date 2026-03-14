@@ -126,3 +126,57 @@ REGISTRY.register(Tool(
     should_include=lambda ctx: bool(ctx.folder_ids),
     step_type=StepType.SEARCHING_FILES,
 ))
+
+
+READ_FILE_SCHEMA = {
+    'type': 'function',
+    'name': 'read_file',
+    'description': "Read the full contents of a specific file. Use this after searching to get more context from a file, or when the user asks about a specific file visible in the file tree.",
+    'parameters': {
+        'type': 'object',
+        'properties': {
+            'path': {
+                'type': 'string',
+                'description': 'Full file path to read'
+            }
+        },
+        'required': ['path'],
+        'additionalProperties': False
+    },
+    'strict': True
+}
+
+
+def _handle_read_file(args: dict, ctx: ToolContext) -> ToolResult:
+    path = os.path.realpath(args['path'])
+    allowed = any(
+        path.startswith(os.path.realpath(fp))
+        for fp in ctx.folder_paths
+    )
+    assert allowed, f'path outside allowed folders: {path}'
+
+    text = ctx.scanner.extract_text(path) or ''
+    if len(text) > 32000:
+        text = text[:32000] + '\n\n[Truncated — file is too large to show in full]'
+
+    ref = FileReference(
+        filepath=path,
+        display_name=os.path.basename(path),
+    )
+    return ToolResult(
+        output=text,
+        file_refs=[ref],
+        resource_ids=[],
+        summary=f'Read: {os.path.basename(path)}',
+        details=[('File', os.path.basename(path))]
+    )
+
+
+REGISTRY.register(Tool(
+    name='read_file',
+    description='Read the full contents of a specific file',
+    schema=READ_FILE_SCHEMA,
+    handler=_handle_read_file,
+    should_include=lambda ctx: bool(ctx.folder_ids),
+    step_type=StepType.READING_FILE,
+))

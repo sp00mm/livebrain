@@ -549,6 +549,7 @@ class LiveView(QWidget):
         labels = {
             StepType.LISTENING: 'Listening to the conversation',
             StepType.SEARCHING_FILES: 'Looking through your files',
+            StepType.READING_FILE: 'Reading file...',
             StepType.GENERATING: 'Thinking...',
         }
         self._chat_feed.update_status(thread_id, labels.get(step.step_type, 'Working...'))
