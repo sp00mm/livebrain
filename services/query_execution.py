@@ -29,7 +29,7 @@ IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.
 SEARCH_FILES_TOOL = {
     'type': 'function',
     'name': 'search_files',
-    'description': "Search through the user's files and folders for relevant information. Use when the user asks about their documents or you need context from their files.",
+    'description': "Search through the user's files and folders. ALWAYS use this tool when the user's question could be answered or supported by their documents. Search proactively — don't ask the user what to search for.",
     'parameters': {
         'type': 'object',
         'properties': {
@@ -345,15 +345,16 @@ class QueryExecutionService:
             'Interpret generously and ask for clarification if meaning is unclear.'
         )
 
-        parts = ['You have access to these capabilities:']
+        parts = []
+        parts.append('You have access to these capabilities:')
         if has_folders:
-            parts.append('- Search files: search through scanned folders for relevant content')
+            parts.append('- Search files: search through scanned folders for relevant content. Always search first, never ask what to look for.')
         parts.append('- Web search: search the internet for current information')
         parts.append('- Code interpreter: run Python code for calculations or data analysis')
         sections.append('\n'.join(parts))
 
         if file_tree:
-            sections.append(f'Directory structure of scanned folders:\n{file_tree}')
+            sections.append(f'Available files:\n{file_tree}')
 
         if file_context:
             sections.append(f'Reference documents:\n{file_context}')

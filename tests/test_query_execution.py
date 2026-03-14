@@ -473,7 +473,7 @@ class TestRichSystemPrompt:
         service = QueryExecutionService(db, MockEmbedder())
         brain = Brain(name='Test')
         prompt = service._build_system_prompt(brain, file_tree='project/\n  main.py\n  utils.py')
-        assert 'Directory structure' in prompt
+        assert 'Available files' in prompt
         assert 'main.py' in prompt
 
     def test_prompt_without_file_tree(self, db):
