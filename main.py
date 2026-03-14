@@ -5,6 +5,7 @@ import sys
 import json
 from PySide6.QtWidgets import QApplication
 from menubar import MenuBarApp
+from services.crash_reporter import install as install_crash_reporter
 
 
 def get_version():
@@ -14,6 +15,8 @@ def get_version():
 
 
 def main():
+    install_crash_reporter()
+
     app = QApplication(sys.argv)
     app.setApplicationName('Livebrain')
     app.setApplicationVersion(get_version())
