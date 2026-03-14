@@ -47,9 +47,16 @@ done
 VERSION=$(read_version)
 
 if [[ -n "$BUMP" ]]; then
+    OLD_VERSION="$VERSION"
     VERSION=$(bump_version "$VERSION" "$BUMP")
     write_version "$VERSION"
     echo "Bumped version to ${VERSION}"
+
+    WEBSITE_HTML="${SCRIPT_DIR}/../website/index.html"
+    if [[ -f "$WEBSITE_HTML" ]]; then
+        sed -i '' "s/Livebrain-${OLD_VERSION}.dmg/Livebrain-${VERSION}.dmg/g" "$WEBSITE_HTML"
+        echo "Updated website download links to ${VERSION}"
+    fi
 fi
 
 echo ""
