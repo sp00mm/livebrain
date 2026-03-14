@@ -100,6 +100,8 @@ class CheckRow(QWidget):
 
 class SetupView(QWidget):
     setup_complete = Signal()
+    _recheck = Signal()
+    _screen_result = Signal(bool)
 
     def __init__(self, app, parent=None):
         super().__init__(parent)
@@ -150,6 +152,9 @@ class SetupView(QWidget):
         self._key_row.set_action('Enter Key', self._show_key_input)
         self._key_row.add_input('sk-...', self._save_key)
 
+        self._recheck.connect(self.run_checks)
+        self._screen_result.connect(self._on_screen_result)
+
     def run_checks(self):
         mic = permissions.check_microphone()
         speech = permissions.check_speech_recognition()
@@ -161,9 +166,15 @@ class SetupView(QWidget):
         self._model_row.set_status(model)
         self._key_row.set_status(key)
 
-        permissions.check_screen_recording(
-            lambda ok: QTimer.singleShot(0, lambda: self._finish_checks(mic, ok, speech, model, key))
-        )
+        self._pending_checks = (mic, speech, model, key)
+        permissions.check_screen_recording(self._on_screen_check)
+
+    def _on_screen_check(self, ok):
+        self._screen_result.emit(ok)
+
+    def _on_screen_result(self, screen_ok):
+        mic, speech, model, key = self._pending_checks
+        self._finish_checks(mic, screen_ok, speech, model, key)
 
     def _finish_checks(self, mic, screen, speech, model, key):
         self._screen_row.set_status(screen)
@@ -174,13 +185,13 @@ class SetupView(QWidget):
             self._status_label.setText('')
 
     def _request_mic(self):
-        permissions.request_microphone(lambda _: QTimer.singleShot(0, self.run_checks))
+        permissions.request_microphone(lambda _: self._recheck.emit())
 
     def _request_screen(self):
-        permissions.request_screen_recording(lambda _: QTimer.singleShot(0, self.run_checks))
+        permissions.request_screen_recording(lambda _: self._recheck.emit())
 
     def _request_speech(self):
-        permissions.request_speech_recognition(lambda _: QTimer.singleShot(0, self.run_checks))
+        permissions.request_speech_recognition(lambda _: self._recheck.emit())
 
     def _download_model(self):
         from ui.threads.model_download_thread import ModelDownloadThread
