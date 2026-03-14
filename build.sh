@@ -58,16 +58,6 @@ echo "Setting LSUIElement for menu bar app..."
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" Livebrain.app/Contents/Info.plist 2>/dev/null || \
 /usr/libexec/PlistBuddy -c "Set :LSUIElement true" Livebrain.app/Contents/Info.plist
 
-echo "Creating DMG (without models)..."
-create-dmg \
-  --volname "Livebrain Installer" \
-  --window-size 500 320 \
-  --icon-size 80 \
-  --icon "Livebrain.app" 125 160 \
-  --app-drop-link 375 160 \
-  "Livebrain-${VERSION}.dmg" \
-  "Livebrain.app"
-
 if [ "$SIGN" = true ]; then
     IDENTITY="Developer ID Application: Genfit LLC (VWVKXWHBS8)"
 
@@ -80,11 +70,22 @@ if [ "$SIGN" = true ]; then
 
     echo "Signing app bundle..."
     codesign --force --options runtime --timestamp --sign "$IDENTITY" Livebrain.app
+fi
 
+echo "Creating DMG..."
+create-dmg \
+  --volname "Livebrain Installer" \
+  --window-size 500 320 \
+  --icon-size 80 \
+  --icon "Livebrain.app" 125 160 \
+  --app-drop-link 375 160 \
+  "Livebrain-${VERSION}.dmg" \
+  "Livebrain.app"
+
+if [ "$SIGN" = true ]; then
     echo "Signing DMG..."
     codesign --force --timestamp --sign "$IDENTITY" "Livebrain-${VERSION}.dmg"
 
-    # One-time setup: xcrun notarytool store-credentials "livebrain-notary" --apple-id YOUR_APPLE_ID --team-id VWVKXWHBS8
     echo "Submitting for notarization..."
     xcrun notarytool submit "Livebrain-${VERSION}.dmg" --keychain-profile "livebrain-notary" --wait
 
