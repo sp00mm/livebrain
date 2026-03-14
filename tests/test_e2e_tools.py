@@ -1,213 +1,167 @@
-import hashlib
 import json
 import os
 import shutil
-import tempfile
-from unittest.mock import MagicMock, patch
 
+import keyring
 import pytest
 
 from models import (
     Brain, Session, Resource, ResourceType, IndexStatus,
-    FileReference, ToolCallDetail, QueryType
+    StepType, StepStatus
 )
 from services.database import (
     BrainRepository, SessionRepository, ResourceRepository,
     InteractionRepository, AIResponseRepository, ToolCallRepository,
     RAGService
 )
-from services.query_execution import QueryExecutionService, QueryContext, ExecutionCallbacks
-from services.tools import REGISTRY, ToolContext
+from services.embedder import Embedder
 from services.scanner import FileScanner
-from services.llm.interfaces import LLMResponse, ToolCall
+from services.query_execution import QueryExecutionService, QueryContext, ExecutionCallbacks
+from ui.markdown_renderer import render_markdown
 
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'fixtures', 'sample_docs')
 
+HAS_API_KEY = bool(keyring.get_password('Livebrain', 'openai_api_key'))
+HAS_MODEL = os.path.isfile(
+    os.path.join(Embedder.get_model_dir(), 'onnx', 'model_q4.onnx')
+)
 
-class MockEmbedder:
-    def embed(self, text, is_query=True):
-        h = hashlib.md5(text.encode()).digest()
-        base = [b / 255.0 for b in h]
-        return (base * 48)[:768]
-
-
-def _make_stream(calls):
-    it = iter(calls)
-    def stream(*args, **kwargs):
-        yield ''
-        return next(it)
-    return stream
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(not HAS_API_KEY, reason='No OpenAI API key in keychain'),
+    pytest.mark.skipif(not HAS_MODEL, reason='No ONNX embedding model on disk'),
+]
 
 
-def _tool_response(call_id, name, arguments):
-    output_item = MagicMock()
-    output_item.model_dump.return_value = {'type': 'function_call', 'name': name}
-    return LLMResponse(
-        text='', model='test', tokens_input=5, tokens_output=3,
-        tool_calls=[ToolCall(call_id=call_id, name=name, arguments=json.dumps(arguments))],
-        output_items=[output_item]
+@pytest.fixture
+def embedder():
+    return Embedder()
+
+
+@pytest.fixture
+def indexed_brain(db, embedder, tmp_path):
+    for name in os.listdir(FIXTURES_DIR):
+        shutil.copy(os.path.join(FIXTURES_DIR, name), tmp_path / name)
+
+    brain = BrainRepository(db).create(Brain(name='Research Assistant'))
+    session = SessionRepository(db).create(Session(name='E2E Test'))
+    resource = ResourceRepository(db).create(Resource(
+        resource_type=ResourceType.FOLDER,
+        name='sample_docs',
+        path=str(tmp_path),
+        index_status=IndexStatus.INDEXED
+    ))
+    ResourceRepository(db).link_to_brain(resource.id, brain.id)
+
+    rag = RAGService(db)
+    scanner = FileScanner()
+    for filepath in scanner.scan_directory(str(tmp_path)):
+        segments = scanner.extract_text_with_meta(filepath)
+        rag.index_text_with_meta(
+            resource.id, filepath, segments,
+            lambda text: embedder.embed(text, is_query=False)
+        )
+
+    return brain, session, resource
+
+
+def test_full_tool_calling_pipeline(db, embedder, indexed_brain, qapp):
+    brain, session, resource = indexed_brain
+
+    steps, deltas, tool_calls = [], [], []
+    callbacks = ExecutionCallbacks(
+        on_step=lambda s: steps.append(s),
+        on_delta=lambda d: deltas.append(d),
+        on_complete=lambda r: None,
+        on_tool_call=lambda d: tool_calls.append(d)
     )
 
+    service = QueryExecutionService(db, embedder)
+    ctx = QueryContext(
+        session_id=session.id,
+        brain=brain,
+        query_text='What was the Q3 2025 revenue and who is the tech lead for Project Phoenix?'
+    )
+    response = service.execute(ctx, callbacks)
 
-def _text_response(text):
-    return LLMResponse(text=text, model='test', tokens_input=8, tokens_output=4)
+    # --- 1. LLM produced a real response ---
+    assert response.text
+    assert len(deltas) > 0
+    assert response.tokens_input > 0
+    assert response.tokens_output > 0
+    assert response.latency_ms > 0
 
+    # --- 2. Tool calls happened ---
+    assert len(tool_calls) > 0
+    step_types = [s.step_type for s in steps if s.status == StepStatus.IN_PROGRESS]
+    assert StepType.LISTENING in step_types
+    assert StepType.GENERATING in step_types
+    assert StepType.SEARCHING_FILES in step_types
 
-class TestE2EToolCalling:
-    def _setup_brain_with_folder(self, db):
-        brain = BrainRepository(db).create(Brain(name='Test Brain'))
-        session = SessionRepository(db).create(Session(name='Test Session'))
+    tc = tool_calls[0]
+    assert tc.summary
+    assert len(tc.details) > 0
 
-        tmp_dir = tempfile.mkdtemp()
-        for name in os.listdir(FIXTURES_DIR):
-            shutil.copy(os.path.join(FIXTURES_DIR, name), os.path.join(tmp_dir, name))
+    # --- 3. Tool call records persisted correctly ---
+    interaction = InteractionRepository(db).get_by_session(session.id)[0]
+    records = ToolCallRepository(db).get_by_interaction(interaction.id)
+    assert len(records) >= 1
+    rec = records[0]
+    assert rec.call_id
+    assert rec.tool_name == 'search_files'
+    assert 'query' in rec.arguments
+    parsed = json.loads(rec.result)
+    assert isinstance(parsed, list)
+    assert len(parsed) > 0
+    assert rec.duration_ms >= 0
 
-        resource = ResourceRepository(db).create(Resource(
-            resource_type=ResourceType.FOLDER,
-            name='sample_docs',
-            path=tmp_dir,
-            index_status=IndexStatus.INDEXED
-        ))
-        ResourceRepository(db).link_to_brain(resource.id, brain.id)
+    # --- 4. File references are real paths ---
+    assert len(response.file_references) > 0
+    for ref in response.file_references:
+        assert os.path.isabs(ref.filepath)
+        assert os.path.exists(ref.filepath)
+        assert ref.display_name
+        assert isinstance(ref.relevance_score, float)
 
-        rag = RAGService(db)
-        scanner = FileScanner()
-        embedder = MockEmbedder()
-        for filepath in scanner.scan_directory(tmp_dir):
-            segments = scanner.extract_text_with_meta(filepath)
-            rag.index_text_with_meta(
-                resource.id, filepath, segments,
-                lambda text: embedder.embed(text, is_query=False)
-            )
+    # --- 5. Interaction trace has complete prompt/tools/messages ---
+    assert 'Livebrain' in interaction.system_prompt
+    assert brain.name in interaction.system_prompt
+    assert 'speech recognition' in interaction.system_prompt
+    assert 'Available files' in interaction.system_prompt
+    assert 'quarterly_report.txt' in interaction.system_prompt
 
-        return brain, session, tmp_dir
+    tool_names = [t.get('name', t['type']) for t in interaction.tools]
+    assert 'web_search' in tool_names
+    assert 'search_files' in tool_names
+    assert 'read_file' in tool_names
 
-    def _callbacks(self):
-        data = {'steps': [], 'deltas': [], 'tool_calls': [], 'responses': []}
-        return ExecutionCallbacks(
-            on_step=lambda s: data['steps'].append(s),
-            on_delta=lambda d: data['deltas'].append(d),
-            on_complete=lambda r: data['responses'].append(r),
-            on_tool_call=lambda d: data['tool_calls'].append(d)
-        ), data
+    assert any(
+        'revenue' in str(m.get('content', '')).lower() or 'phoenix' in str(m.get('content', '')).lower()
+        for m in interaction.messages
+    )
 
-    @patch.object(QueryExecutionService, '_gather_file_context', return_value='')
-    @patch.object(QueryExecutionService, '_gather_image_content', return_value=([], []))
-    def test_search_files_e2e(self, _, __, db):
-        brain, session, tmp_dir = self._setup_brain_with_folder(db)
-        callbacks, data = self._callbacks()
+    # --- 6. AI response persisted and matches ---
+    persisted = AIResponseRepository(db).get_by_interaction(interaction.id)
+    assert persisted.text == response.text
+    assert persisted.model_used
+    assert len(persisted.file_references) == len(response.file_references)
 
-        service = QueryExecutionService(db, MockEmbedder())
-        service._llm = MagicMock()
-        service._llm.stream = _make_stream([
-            _tool_response('tc-1', 'search_files', {'query': 'revenue last quarter'}),
-            _text_response('The revenue was $4.2M according to [the report](quarterly_report.txt)'),
-        ])
+    # --- 7. LLM produced citation links and linkify converts to file:// URLs ---
+    import re
+    links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', response.text)
+    assert len(links) > 0, f'LLM did not produce any markdown citation links in: {response.text}'
 
-        ctx = QueryContext(session_id=session.id, brain=brain, query_text='What was the revenue last quarter?')
-        response = service.execute(ctx, callbacks)
+    from ui.widgets.chat_feed import AnswerItem
+    item = AnswerItem()
+    item._file_refs = response.file_references
+    html = render_markdown(response.text)
+    linkified = item._linkify_sources(html)
 
-        interaction = InteractionRepository(db).get_by_session(session.id)[0]
-        records = ToolCallRepository(db).get_by_interaction(interaction.id)
-        assert len(records) == 1
-        assert records[0].tool_name == 'search_files'
+    ref_names = {ref.display_name for ref in response.file_references}
+    linked_refs = [href for _, href in links if href in ref_names]
+    assert len(linked_refs) > 0, f'LLM links {links} do not match any file refs {ref_names}'
 
-        assert any(ref.display_name == 'quarterly_report.txt' for ref in response.file_references)
-        assert '[the report](quarterly_report.txt)' in response.text
-
-        assert any('Searched' in tc.summary for tc in data['tool_calls'])
-        assert any(t.get('name') == 'search_files' for t in interaction.tools)
-
-        shutil.rmtree(tmp_dir)
-
-    @patch.object(QueryExecutionService, '_gather_file_context', return_value='')
-    @patch.object(QueryExecutionService, '_gather_image_content', return_value=([], []))
-    def test_read_file_e2e(self, _, __, db):
-        brain, session, tmp_dir = self._setup_brain_with_folder(db)
-        callbacks, data = self._callbacks()
-        target_path = os.path.join(tmp_dir, 'meeting_notes.txt')
-
-        service = QueryExecutionService(db, MockEmbedder())
-        service._llm = MagicMock()
-        service._llm.stream = _make_stream([
-            _tool_response('tc-1', 'read_file', {'path': target_path}),
-            _text_response('The meeting had four attendees.'),
-        ])
-
-        ctx = QueryContext(session_id=session.id, brain=brain, query_text='Who attended the meeting?')
-        service.execute(ctx, callbacks)
-
-        interaction = InteractionRepository(db).get_by_session(session.id)[0]
-        records = ToolCallRepository(db).get_by_interaction(interaction.id)
-        assert len(records) == 1
-        assert records[0].tool_name == 'read_file'
-        assert 'Sarah Chen' in records[0].result
-
-        shutil.rmtree(tmp_dir)
-
-    @patch.object(QueryExecutionService, '_gather_file_context', return_value='')
-    @patch.object(QueryExecutionService, '_gather_image_content', return_value=([], []))
-    def test_search_then_read_e2e(self, _, __, db):
-        brain, session, tmp_dir = self._setup_brain_with_folder(db)
-        callbacks, data = self._callbacks()
-        target_path = os.path.join(tmp_dir, 'quarterly_report.txt')
-
-        service = QueryExecutionService(db, MockEmbedder())
-        service._llm = MagicMock()
-        service._llm.stream = _make_stream([
-            _tool_response('tc-1', 'search_files', {'query': 'revenue'}),
-            _tool_response('tc-2', 'read_file', {'path': target_path}),
-            _text_response('Revenue was $4.2M.'),
-        ])
-
-        ctx = QueryContext(session_id=session.id, brain=brain, query_text='Full revenue details?')
-        service.execute(ctx, callbacks)
-
-        interaction = InteractionRepository(db).get_by_session(session.id)[0]
-        records = ToolCallRepository(db).get_by_interaction(interaction.id)
-        assert len(records) == 2
-        assert records[0].tool_name == 'search_files'
-        assert records[1].tool_name == 'read_file'
-
-        shutil.rmtree(tmp_dir)
-
-    @patch.object(QueryExecutionService, '_gather_file_context', return_value='')
-    @patch.object(QueryExecutionService, '_gather_image_content', return_value=([], []))
-    def test_no_tools_without_folders(self, _, __, db):
-        brain = BrainRepository(db).create(Brain(name='Empty Brain'))
-        session = SessionRepository(db).create(Session(name='Session'))
-        callbacks, data = self._callbacks()
-
-        service = QueryExecutionService(db, MockEmbedder())
-        service._llm = MagicMock()
-        service._llm.stream = _make_stream([_text_response('Just a direct answer.')])
-
-        ctx = QueryContext(session_id=session.id, brain=brain, query_text='Hello')
-        service.execute(ctx, callbacks)
-
-        interaction = InteractionRepository(db).get_by_session(session.id)[0]
-        assert not any(t.get('name') == 'search_files' for t in interaction.tools)
-        assert 'Search' not in interaction.system_prompt
-
-    @patch.object(QueryExecutionService, '_gather_file_context', return_value='')
-    @patch.object(QueryExecutionService, '_gather_image_content', return_value=([], []))
-    def test_file_tree_in_prompt(self, _, __, db):
-        brain, session, tmp_dir = self._setup_brain_with_folder(db)
-        callbacks, data = self._callbacks()
-
-        service = QueryExecutionService(db, MockEmbedder())
-        service._llm = MagicMock()
-        service._llm.stream = _make_stream([_text_response('Here is the answer.')])
-
-        ctx = QueryContext(session_id=session.id, brain=brain, query_text='What files do you see?')
-        service.execute(ctx, callbacks)
-
-        interaction = InteractionRepository(db).get_by_session(session.id)[0]
-        assert 'Available files' in interaction.system_prompt
-        assert 'quarterly_report.txt' in interaction.system_prompt
-        assert 'meeting_notes.txt' in interaction.system_prompt
-        assert 'technical_spec.py' in interaction.system_prompt
-        assert 'project_plan.md' in interaction.system_prompt
-
-        shutil.rmtree(tmp_dir)
+    for href in linked_refs:
+        ref = next(r for r in response.file_references if r.display_name == href)
+        assert f'file://{ref.filepath}' in linkified

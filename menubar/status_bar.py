@@ -12,7 +12,7 @@ from objc import super as objc_super
 import qtawesome as qta
 from PySide6.QtCore import QBuffer, QIODevice
 
-NSEVENT_RIGHT_MOUSE_UP = 3
+NSEVENT_RIGHT_MOUSE_UP = 4
 
 
 class StatusBarDelegate(NSObject):

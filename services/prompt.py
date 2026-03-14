@@ -49,7 +49,11 @@ class SystemPromptBuilder:
 
     def file_tree(self, tree: str | None) -> SystemPromptBuilder:
         if tree:
-            self._sections.append(f'Available files:\n{tree}')
+            self._sections.append(
+                f'Available files:\n{tree}\n\n'
+                'The file list above shows names only. You MUST use the search_files tool '
+                'to read their contents before referencing them.'
+            )
         return self
 
     def file_context(self, content: str) -> SystemPromptBuilder:

@@ -3,7 +3,7 @@ import json
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QScrollArea, QFrame, QPushButton
+    QScrollArea, QFrame, QPushButton, QApplication
 )
 from PySide6.QtCore import Qt
 
@@ -100,6 +100,7 @@ class AuditStepItem(QFrame):
         labels = {
             StepType.LISTENING: 'Listening to conversation',
             StepType.SEARCHING_FILES: 'Looking through files',
+            StepType.READING_FILE: 'Reading file',
             StepType.GENERATING: 'Thinking...',
         }
 
@@ -306,6 +307,7 @@ class AuditWindow(QWidget):
         self.setWindowTitle('Session Details')
         self.setStyleSheet(STYLE_SHEET + f'\nQWidget {{ background-color: {BG_PRIMARY}; }}')
 
+        self._session_id = session_id
         self._feed_repo = ChatFeedItemRepository(db)
         self._interaction_repo = InteractionRepository(db)
         self._step_repo = ExecutionStepRepository(db)
@@ -326,6 +328,15 @@ class AuditWindow(QWidget):
         title = QLabel('Session Details')
         title.setStyleSheet(f'color: {TEXT_PRIMARY}; font-weight: 600; font-size: 14px;')
         header.addWidget(title, 1)
+
+        copy_btn = QPushButton()
+        copy_btn.setObjectName('iconBtn')
+        copy_btn.setIcon(qta.icon('mdi.content-copy', color='#888888'))
+        copy_btn.setFixedSize(24, 24)
+        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        copy_btn.setToolTip('Copy full session data')
+        copy_btn.clicked.connect(self._copy_session)
+        header.addWidget(copy_btn)
 
         close_btn = QPushButton()
         close_btn.setObjectName('iconBtn')
@@ -378,6 +389,78 @@ class AuditWindow(QWidget):
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px; padding: 24px;')
             self._add_item(empty)
+
+    def _copy_session(self):
+        parts = []
+        feed_items = self._feed_repo.get_by_session(self._session_id)
+        interactions = self._interaction_repo.get_by_session(self._session_id)
+
+        for item in feed_items:
+            parts.append(f'[{item.item_type.value}] {item.created_at.strftime("%H:%M:%S")}')
+            parts.append(item.content)
+            parts.append('')
+
+        for interaction in interactions:
+            parts.append(f'--- Interaction: {interaction.query_text} ---')
+            parts.append(f'Time: {interaction.created_at.strftime("%H:%M:%S")}')
+            parts.append('')
+
+            if interaction.system_prompt:
+                parts.append('=== System Prompt ===')
+                parts.append(interaction.system_prompt)
+                parts.append('')
+
+            if interaction.tools:
+                parts.append('=== Tools ===')
+                for t in interaction.tools:
+                    name = t.get('name', t.get('type', ''))
+                    parts.append(f'  {name}')
+                parts.append('')
+
+            if interaction.messages:
+                parts.append('=== Messages ===')
+                for msg in interaction.messages:
+                    role = msg.get('role', 'unknown')
+                    content = msg.get('content', '')
+                    if isinstance(content, list):
+                        content = json.dumps(content, indent=2)
+                    parts.append(f'[{role}]')
+                    parts.append(str(content))
+                    parts.append('')
+
+            steps = self._step_repo.get_by_interaction(interaction.id)
+            if steps:
+                parts.append('=== Steps ===')
+                for step in steps:
+                    duration = ''
+                    if step.status == StepStatus.COMPLETED:
+                        duration = f' ({(step.completed_at - step.started_at).total_seconds():.1f}s)'
+                    parts.append(f'  {step.step_type.value}{duration}')
+                    if step.details:
+                        parts.append(f'    {step.details}')
+                parts.append('')
+
+            tool_calls = self._tool_call_repo.get_by_interaction(interaction.id)
+            if tool_calls:
+                parts.append('=== Tool Calls ===')
+                for tc in tool_calls:
+                    parts.append(f'  {tc.tool_name} ({tc.duration_ms}ms)')
+                    parts.append(f'    Args: {json.dumps(tc.arguments)}')
+                    parts.append(f'    Result: {tc.result}')
+                    parts.append('')
+
+            response = self._response_repo.get_by_interaction(interaction.id)
+            if response:
+                parts.append('=== Response ===')
+                parts.append(response.text)
+                parts.append(f'Model: {response.model_used} | Tokens: {response.tokens_input}in/{response.tokens_output}out | {response.latency_ms}ms')
+                if response.file_references:
+                    parts.append('File refs:')
+                    for ref in response.file_references:
+                        parts.append(f'  {ref.display_name} -> {ref.filepath} (score={ref.relevance_score:.3f})')
+                parts.append('')
+
+        QApplication.clipboard().setText('\n'.join(parts))
 
     def _add_item(self, widget):
         self._timeline.insertWidget(self._timeline.count() - 1, widget)

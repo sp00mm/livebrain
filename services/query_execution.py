@@ -103,10 +103,13 @@ class QueryExecutionService:
 
         available_tools = REGISTRY.get_available(tool_ctx)
 
+        folder_file_names = self._get_folder_file_names(folder_resources)
+
         for _ in range(5):
             source_names = list(dict.fromkeys(
                 [ref.display_name for ref in file_refs]
                 + [r.name for r in linked_resources if r.resource_type == ResourceType.FILE]
+                + folder_file_names
             ))
             system_prompt = (
                 SystemPromptBuilder()
@@ -205,6 +208,16 @@ class QueryExecutionService:
             'call_id': tc.call_id,
             'output': result.output
         }
+
+    def _get_folder_file_names(self, folder_resources):
+        scanner = FileScanner()
+        names = []
+        for resource in folder_resources:
+            if not os.path.isdir(resource.path):
+                continue
+            for filepath in scanner.scan_directory(resource.path):
+                names.append(os.path.basename(filepath))
+        return names
 
     def _create_interaction(self, ctx: QueryContext) -> Interaction:
         interaction = Interaction(
