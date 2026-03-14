@@ -60,7 +60,7 @@ echo "Setting LSUIElement for menu bar app..."
 
 echo "Creating DMG (without models)..."
 create-dmg \
-  --volname "Livebrain" \
+  --volname "Livebrain Installer" \
   --window-size 500 320 \
   --icon-size 80 \
   --icon "Livebrain.app" 125 160 \
