@@ -19,31 +19,13 @@ from services.database import (
 from services.llm import LLMService, Message
 from services.scanner import FileScanner
 from services.conversation import ConversationContextCache
+from services.tools import REGISTRY, ToolContext, ToolResult
 from templates import TEMPLATES
 
 
 _context_cache = ConversationContextCache()
 
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp'}
-
-SEARCH_FILES_TOOL = {
-    'type': 'function',
-    'name': 'search_files',
-    'description': "Search through the user's files and folders. ALWAYS use this tool when the user's question could be answered or supported by their documents. Search proactively — don't ask the user what to search for.",
-    'parameters': {
-        'type': 'object',
-        'properties': {
-            'query': {
-                'type': 'string',
-                'description': 'Natural language search query to find relevant content'
-            }
-        },
-        'required': ['query'],
-        'additionalProperties': False
-    },
-    'strict': True
-}
-
 
 @dataclass
 class QueryContext:
@@ -103,7 +85,14 @@ class QueryExecutionService:
         image_blocks, image_refs = self._gather_image_content(ctx.brain.id)
         file_refs.extend(image_refs)
 
-        tools = self._build_tools(folder_ids)
+        tool_ctx = ToolContext(
+            folder_ids=folder_ids,
+            embedder=self.embedder,
+            rag=self._rag,
+            scanner=FileScanner(),
+            folder_paths=[r.path for r in folder_resources],
+        )
+        tools = REGISTRY.build_schemas(tool_ctx)
         interaction.tools = tools
         messages = self._build_messages(conversation, ctx.query_text, image_blocks)
         interaction.messages = [{'role': m.role, 'content': m.content} for m in messages]
@@ -148,24 +137,25 @@ class QueryExecutionService:
                 extra_input.append(item.model_dump())
 
             for tc in llm_response.tool_calls:
-                step = self._emit_step(interaction.id, StepType.SEARCHING_FILES, callbacks.on_step)
+                tool = REGISTRY.get(tc.name)
+                step = self._emit_step(interaction.id, tool.step_type, callbacks.on_step)
                 tool_start = time.time()
                 args = json.loads(tc.arguments)
-                result, refs, res_ids = self._execute_tool(tc.name, args, folder_ids)
+                result = tool.handler(args, tool_ctx)
                 tool_duration = int((time.time() - tool_start) * 1000)
-                file_refs.extend(refs)
-                resource_ids.extend(res_ids)
+                file_refs.extend(result.file_refs)
+                resource_ids.extend(result.resource_ids)
                 details = json.dumps({
-                    'query': args['query'],
-                    'matched_files': [r.display_name for r in refs]
+                    'query': args.get('query', ''),
+                    'matched_files': [r.display_name for r in result.file_refs]
                 })
                 self._step_repo.update_details(step.id, details)
                 self._complete_step(step.id, callbacks.on_step)
 
                 callbacks.on_tool_call(ToolCallDetail(
-                    query=args['query'],
-                    results_count=len(refs),
-                    matched_files=[r.display_name for r in refs],
+                    query=args.get('query', ''),
+                    results_count=len(result.file_refs),
+                    matched_files=[r.display_name for r in result.file_refs],
                     duration_ms=tool_duration
                 ))
 
@@ -174,14 +164,14 @@ class QueryExecutionService:
                     call_id=tc.call_id,
                     tool_name=tc.name,
                     arguments=args,
-                    result=result,
+                    result=result.output,
                     duration_ms=tool_duration
                 ))
 
                 extra_input.append({
                     'type': 'function_call_output',
                     'call_id': tc.call_id,
-                    'output': result
+                    'output': result.output
                 })
 
         interaction.resources_used = resource_ids
@@ -223,53 +213,6 @@ class QueryExecutionService:
     def _complete_step(self, step_id: str, on_step: Callable[[ExecutionStep], None]):
         self._step_repo.complete(step_id)
         on_step(ExecutionStep(id=step_id, status=StepStatus.COMPLETED))
-
-    def _build_tools(self, folder_ids: list[str]) -> list[dict]:
-        tools = [
-            {'type': 'web_search'},
-            {'type': 'code_interpreter', 'container': {'type': 'auto'}},
-        ]
-        if folder_ids:
-            tools.append(SEARCH_FILES_TOOL)
-        return tools
-
-    def _execute_tool(self, name: str, args: dict, folder_ids: list[str]) -> tuple[str, list[FileReference], list[str]]:
-        if name == 'search_files':
-            return self._tool_search_files(args['query'], folder_ids)
-        raise ValueError(f'Unknown tool: {name}')
-
-    def _tool_search_files(self, query: str, folder_ids: list[str]) -> tuple[str, list[FileReference], list[str]]:
-        embedding = self.embedder.embed(query, is_query=True)
-        results = self._rag.search(embedding, resource_ids=folder_ids, limit=10)
-        context_parts = []
-        file_refs = []
-        used_resource_ids = []
-        seen_paths = set()
-        seen_resource_ids = set()
-        for r in results:
-            resource = r['resource']
-            chunk = r['chunk']
-            similarity = r['similarity']
-            context_parts.append(json.dumps({
-                'source': resource.name,
-                'filepath': chunk.filepath,
-                'text': chunk.text,
-                'relevance': round(similarity, 3),
-                'location': chunk.source_meta
-            }))
-            if chunk.filepath not in seen_paths:
-                seen_paths.add(chunk.filepath)
-                file_refs.append(FileReference(
-                    resource_id=resource.id,
-                    filepath=chunk.filepath,
-                    display_name=os.path.basename(chunk.filepath),
-                    relevance_score=similarity,
-                    source_meta=chunk.source_meta
-                ))
-            if resource.id not in seen_resource_ids:
-                seen_resource_ids.add(resource.id)
-                used_resource_ids.append(resource.id)
-        return f'[{",".join(context_parts)}]', file_refs, used_resource_ids
 
     def _build_messages(self, conversation, query: str,
                         image_blocks: list[dict] = None) -> list[Message]:

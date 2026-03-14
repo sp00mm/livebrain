@@ -15,9 +15,10 @@ from models import (
 from services.database import (
     BrainRepository, QuestionRepository, SessionRepository,
     TranscriptEntryRepository, InteractionRepository, ResourceRepository,
-    ToolCallRepository
+    ToolCallRepository, RAGService
 )
 from services.query_execution import QueryExecutionService, QueryContext, ExecutionCallbacks
+from services.tools import REGISTRY, ToolContext
 from services.conversation import ConversationContext
 from services.llm import LLMResponse, ToolCall
 
@@ -397,9 +398,15 @@ class TestSourceCitations:
         ))
         resource_repo.link_to_brain(resource.id, brain.id)
 
-        service = QueryExecutionService(db, MockEmbedder())
-        result, refs, res_ids = service._tool_search_files('test', [resource.id])
-        parsed = json.loads(result)
+
+        embedder = MockEmbedder()
+        tool_ctx = ToolContext(
+            folder_ids=[resource.id], embedder=embedder,
+            rag=RAGService(db), scanner=None, folder_paths=['/tmp/docs'],
+        )
+        tool = REGISTRY.get('search_files')
+        result = tool.handler({'query': 'test'}, tool_ctx)
+        parsed = json.loads(result.output)
         assert isinstance(parsed, list)
         assert len(parsed) == 0
 
@@ -512,31 +519,43 @@ class TestToolCallDetail:
 
 
 class TestToolExecution:
-    def test_build_tools_with_folders(self, db):
-        service = QueryExecutionService(db, MockEmbedder())
-        tools = service._build_tools(['folder-1', 'folder-2'])
+    def test_build_schemas_with_folders(self, db):
+
+        ctx = ToolContext(
+            folder_ids=['folder-1', 'folder-2'], embedder=MockEmbedder(),
+            rag=RAGService(db), scanner=None, folder_paths=[],
+        )
+        tools = REGISTRY.build_schemas(ctx)
         names = [t.get('name') for t in tools if t.get('name')]
         assert 'search_files' in names
         assert any(t['type'] == 'web_search' for t in tools)
 
-    def test_build_tools_without_folders(self, db):
-        service = QueryExecutionService(db, MockEmbedder())
-        tools = service._build_tools([])
+    def test_build_schemas_without_folders(self, db):
+
+        ctx = ToolContext(
+            folder_ids=[], embedder=MockEmbedder(),
+            rag=RAGService(db), scanner=None, folder_paths=[],
+        )
+        tools = REGISTRY.build_schemas(ctx)
         names = [t.get('name') for t in tools if t.get('name')]
         assert 'search_files' not in names
         assert any(t['type'] == 'web_search' for t in tools)
 
-    def test_execute_tool_search_files(self, db):
-        service = QueryExecutionService(db, MockEmbedder())
-        result, refs, res_ids = service._tool_search_files('test query', [])
-        assert isinstance(result, str)
-        assert isinstance(refs, list)
-        assert isinstance(res_ids, list)
+    def test_search_files_handler(self, db):
 
-    def test_execute_tool_unknown(self, db):
-        service = QueryExecutionService(db, MockEmbedder())
-        with pytest.raises(ValueError, match='Unknown tool'):
-            service._execute_tool('nonexistent_tool', {}, [])
+        ctx = ToolContext(
+            folder_ids=[], embedder=MockEmbedder(),
+            rag=RAGService(db), scanner=None, folder_paths=[],
+        )
+        tool = REGISTRY.get('search_files')
+        result = tool.handler({'query': 'test query'}, ctx)
+        assert isinstance(result.output, str)
+        assert isinstance(result.file_refs, list)
+        assert isinstance(result.resource_ids, list)
+
+    def test_registry_get_unknown(self):
+        with pytest.raises(KeyError):
+            REGISTRY.get('nonexistent_tool')
 
     def test_build_messages_simplified(self, db):
         service = QueryExecutionService(db, MockEmbedder())
