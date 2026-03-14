@@ -10,7 +10,7 @@ from .live_view import LiveView
 from .brain_edit_view import BrainEditView
 from .settings_view import SettingsView
 from .template_wizard_view import TemplateWizardView
-from .onboarding import WelcomeView, ApiKeyView, TemplatePickerView
+from .onboarding import WelcomeView, ApiKeyView, TemplatePickerView, SetupView
 from .session_history_view import SessionHistoryView
 
 if TYPE_CHECKING:
@@ -24,6 +24,7 @@ SETTINGS = 4
 WELCOME = 5
 API_KEY = 6
 SESSION_HISTORY = 7
+SETUP = 8
 
 
 class PopoverContent(QWidget):
@@ -48,6 +49,7 @@ class PopoverContent(QWidget):
         self._welcome_view = WelcomeView()
         self._api_key_view = ApiKeyView()
         self._session_history_view = SessionHistoryView(app.db, app.whisper_service)
+        self._setup_view = SetupView(app)
 
         self._stack.addWidget(self._live_view)       # 0
         self._stack.addWidget(self._picker_view)     # 1
@@ -57,6 +59,7 @@ class PopoverContent(QWidget):
         self._stack.addWidget(self._welcome_view)    # 5
         self._stack.addWidget(self._api_key_view)    # 6
         self._stack.addWidget(self._session_history_view)  # 7
+        self._stack.addWidget(self._setup_view)      # 8
 
         self._wire_navigation()
         self._set_starting_view()
@@ -85,8 +88,13 @@ class PopoverContent(QWidget):
 
         self._welcome_view.next_clicked.connect(lambda: self._stack.setCurrentIndex(API_KEY))
         self._api_key_view.api_key_submitted.connect(self._on_api_key_submitted)
+        self._setup_view.setup_complete.connect(self._on_setup_complete)
 
     def _set_starting_view(self):
+        self._stack.setCurrentIndex(SETUP)
+        self._setup_view.run_checks()
+
+    def _on_setup_complete(self):
         settings = UserSettingsRepository(self._app.db).get()
         if settings.onboarding_complete:
             self._stack.setCurrentIndex(LIVE)
