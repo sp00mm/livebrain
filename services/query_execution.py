@@ -113,18 +113,7 @@ class QueryExecutionService:
             interaction.system_prompt = system_prompt
 
             step = self._emit_step(interaction.id, StepType.GENERATING, callbacks.on_step)
-
-            gen = self._llm.stream(
-                messages, system_prompt,
-                lambda delta, is_final: callbacks.on_delta(delta) if not is_final else None,
-                tools=tools, extra_input=extra_input or None
-            )
-            while True:
-                try:
-                    next(gen)
-                except StopIteration as e:
-                    llm_response = e.value
-                    break
+            llm_response = self._call_llm(messages, system_prompt, tools, extra_input, callbacks.on_delta)
             self._complete_step(step.id, callbacks.on_step)
 
             total_input_tokens += llm_response.tokens_input
@@ -137,42 +126,8 @@ class QueryExecutionService:
                 extra_input.append(item.model_dump())
 
             for tc in llm_response.tool_calls:
-                tool = REGISTRY.get(tc.name)
-                step = self._emit_step(interaction.id, tool.step_type, callbacks.on_step)
-                tool_start = time.time()
-                args = json.loads(tc.arguments)
-                result = tool.handler(args, tool_ctx)
-                tool_duration = int((time.time() - tool_start) * 1000)
-                file_refs.extend(result.file_refs)
-                resource_ids.extend(result.resource_ids)
-                details = json.dumps({
-                    'query': args.get('query', ''),
-                    'matched_files': [r.display_name for r in result.file_refs]
-                })
-                self._step_repo.update_details(step.id, details)
-                self._complete_step(step.id, callbacks.on_step)
-
-                callbacks.on_tool_call(ToolCallDetail(
-                    query=args.get('query', ''),
-                    results_count=len(result.file_refs),
-                    matched_files=[r.display_name for r in result.file_refs],
-                    duration_ms=tool_duration
-                ))
-
-                self._tool_call_repo.create(ToolCallRecord(
-                    interaction_id=interaction.id,
-                    call_id=tc.call_id,
-                    tool_name=tc.name,
-                    arguments=args,
-                    result=result.output,
-                    duration_ms=tool_duration
-                ))
-
-                extra_input.append({
-                    'type': 'function_call_output',
-                    'call_id': tc.call_id,
-                    'output': result.output
-                })
+                output = self._run_tool_call(tc, tool_ctx, callbacks, interaction.id, file_refs, resource_ids)
+                extra_input.append(output)
 
         interaction.resources_used = resource_ids
         self._interaction_repo.update(interaction)
@@ -192,6 +147,56 @@ class QueryExecutionService:
         self._response_repo.create(response)
         callbacks.on_complete(response)
         return response
+
+    def _call_llm(self, messages, system_prompt, tools, extra_input, on_delta):
+        gen = self._llm.stream(
+            messages, system_prompt,
+            lambda delta, is_final: on_delta(delta) if not is_final else None,
+            tools=tools, extra_input=extra_input or None
+        )
+        while True:
+            try:
+                next(gen)
+            except StopIteration as e:
+                return e.value
+
+    def _run_tool_call(self, tc, tool_ctx, callbacks, interaction_id, file_refs, resource_ids):
+        tool = REGISTRY.get(tc.name)
+        step = self._emit_step(interaction_id, tool.step_type, callbacks.on_step)
+        tool_start = time.time()
+        args = json.loads(tc.arguments)
+        result = tool.handler(args, tool_ctx)
+        tool_duration = int((time.time() - tool_start) * 1000)
+        file_refs.extend(result.file_refs)
+        resource_ids.extend(result.resource_ids)
+        details = json.dumps({
+            'query': args.get('query', ''),
+            'matched_files': [r.display_name for r in result.file_refs]
+        })
+        self._step_repo.update_details(step.id, details)
+        self._complete_step(step.id, callbacks.on_step)
+
+        callbacks.on_tool_call(ToolCallDetail(
+            query=args.get('query', ''),
+            results_count=len(result.file_refs),
+            matched_files=[r.display_name for r in result.file_refs],
+            duration_ms=tool_duration
+        ))
+
+        self._tool_call_repo.create(ToolCallRecord(
+            interaction_id=interaction_id,
+            call_id=tc.call_id,
+            tool_name=tc.name,
+            arguments=args,
+            result=result.output,
+            duration_ms=tool_duration
+        ))
+
+        return {
+            'type': 'function_call_output',
+            'call_id': tc.call_id,
+            'output': result.output
+        }
 
     def _create_interaction(self, ctx: QueryContext) -> Interaction:
         interaction = Interaction(
