@@ -131,11 +131,10 @@ class SetupView(QWidget):
 
         self._mic_row = CheckRow('Microphone access')
         self._screen_row = CheckRow('Screen recording')
-        self._speech_row = CheckRow('Speech recognition')
         self._model_row = CheckRow('AI model')
         self._key_row = CheckRow('OpenAI API key')
 
-        for row in [self._mic_row, self._screen_row, self._speech_row, self._model_row, self._key_row]:
+        for row in [self._mic_row, self._screen_row, self._model_row, self._key_row]:
             layout.addWidget(row)
 
         layout.addSpacing(16)
@@ -147,7 +146,6 @@ class SetupView(QWidget):
 
         self._mic_row.set_action('Grant Access', self._request_mic)
         self._screen_row.set_action('Grant Access', self._request_screen)
-        self._speech_row.set_action('Grant Access', self._request_speech)
         self._model_row.set_action('Download', self._download_model)
         self._key_row.set_action('Enter Key', self._show_key_input)
         self._key_row.add_input('sk-...', self._save_key)
@@ -157,28 +155,23 @@ class SetupView(QWidget):
 
     def run_checks(self):
         mic = permissions.check_microphone()
-        speech = permissions.check_speech_recognition()
         model = permissions.check_model_downloaded()
         key = permissions.check_api_key()
 
         self._mic_row.set_status(mic)
-        self._speech_row.set_status(speech)
         self._model_row.set_status(model)
         self._key_row.set_status(key)
 
-        self._pending_checks = (mic, speech, model, key)
+        self._pending_checks = (mic, model, key)
         permissions.check_screen_recording(self._on_screen_check)
 
     def _on_screen_check(self, ok):
         self._screen_result.emit(ok)
 
     def _on_screen_result(self, screen_ok):
-        mic, speech, model, key = self._pending_checks
-        self._finish_checks(mic, screen_ok, speech, model, key)
-
-    def _finish_checks(self, mic, screen, speech, model, key):
-        self._screen_row.set_status(screen)
-        if all([mic, screen, speech, model, key]):
+        mic, model, key = self._pending_checks
+        self._screen_row.set_status(screen_ok)
+        if all([mic, screen_ok, model, key]):
             self._status_label.setText('All set!')
             QTimer.singleShot(800, self.setup_complete.emit)
         else:
@@ -189,9 +182,6 @@ class SetupView(QWidget):
 
     def _request_screen(self):
         permissions.request_screen_recording(lambda _: self._recheck.emit())
-
-    def _request_speech(self):
-        permissions.request_speech_recognition(lambda _: self._recheck.emit())
 
     def _download_model(self):
         from ui.threads.model_download_thread import ModelDownloadThread
