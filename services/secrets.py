@@ -4,7 +4,7 @@ from typing import Optional
 import keyring
 
 
-SERVICE_NAME = 'LiveBrain'
+SERVICE_NAME = 'Livebrain'
 
 
 class SecretsStore(ABC):

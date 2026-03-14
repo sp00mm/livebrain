@@ -11,7 +11,7 @@ class AudioStorage:
 
     def __init__(self, session_id: str, base_dir: Optional[str] = None):
         if base_dir is None:
-            base_dir = os.path.expanduser('~/Library/Application Support/LiveBrain/recordings')
+            base_dir = os.path.expanduser('~/Library/Application Support/Livebrain/recordings')
         self.session_dir = os.path.join(base_dir, session_id)
         os.makedirs(self.session_dir, exist_ok=True)
         self._mic_file: Optional[wave.Wave_write] = None

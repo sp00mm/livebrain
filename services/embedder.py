@@ -8,7 +8,7 @@ class Embedder:
     @staticmethod
     def get_model_dir():
         if sys.platform == 'darwin':
-            app_support = os.path.expanduser("~/Library/Application Support/LiveBrain")
+            app_support = os.path.expanduser("~/Library/Application Support/Livebrain")
         else:
             app_support = os.path.expanduser("~/.livebrain")
         

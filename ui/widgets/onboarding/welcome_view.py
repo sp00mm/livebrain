@@ -21,7 +21,7 @@ class WelcomeView(QWidget):
         brain_icon.setPixmap(qta.icon('mdi.brain', color=ACCENT).pixmap(48, 48))
         layout.addWidget(brain_icon)
 
-        title = QLabel('LiveBrain')
+        title = QLabel('Livebrain')
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(f'font-size: 32px; font-weight: 700; font-family: {FONT_FAMILY};')
         layout.addWidget(title)

@@ -10,7 +10,7 @@ class DetachedWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('LiveBrain')
+        self.setWindowTitle('Livebrain')
         self.setMinimumSize(480, 580)
         self.setStyleSheet('background-color: #1e1e1e;')
         self._layout = QVBoxLayout(self)

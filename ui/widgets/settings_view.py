@@ -66,7 +66,7 @@ class SettingsView(QWidget):
         self._mic_combo.addItem('System Default')
         layout.addWidget(self._mic_combo)
 
-        self._feedback_check = QCheckBox('Help improve LiveBrain')
+        self._feedback_check = QCheckBox('Help improve Livebrain')
         self._feedback_check.setStyleSheet(f'color: {TEXT_PRIMARY};')
         layout.addWidget(self._feedback_check)
 

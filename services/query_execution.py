@@ -326,7 +326,7 @@ class QueryExecutionService:
             sections.append(brain.system_prompt)
         else:
             sections.append(
-                'You are a real-time conversation assistant inside LiveBrain, '
+                'You are a real-time conversation assistant inside Livebrain, '
                 'a macOS app that transcribes live conversations and lets users '
                 'ask questions about what was said and their documents.'
             )

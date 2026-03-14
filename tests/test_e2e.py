@@ -22,7 +22,7 @@ pytestmark = pytest.mark.e2e
 
 TESTDATA_DIR = os.path.join(os.path.dirname(__file__), 'testdata')
 
-HAS_API_KEY = bool(keyring.get_password('LiveBrain', 'openai_api_key'))
+HAS_API_KEY = bool(keyring.get_password('Livebrain', 'openai_api_key'))
 HAS_MODEL = os.path.isfile(
     os.path.join(Embedder.get_model_dir(), 'onnx', 'model_q4.onnx')
 )
@@ -128,7 +128,7 @@ def test_interaction_trace_persisted(db, embedder, indexed_brain):
 
     interactions = InteractionRepository(db).get_by_session(session.id)
     interaction = interactions[0]
-    assert 'LiveBrain' in interaction.system_prompt
+    assert 'Livebrain' in interaction.system_prompt
     assert brain.name in interaction.system_prompt
     assert 'speech recognition' in interaction.system_prompt
     tool_names = [t.get('name', t['type']) for t in interaction.tools]

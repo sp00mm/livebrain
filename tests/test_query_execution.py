@@ -449,7 +449,7 @@ class TestRichSystemPrompt:
         service = QueryExecutionService(db, MockEmbedder())
         brain = Brain(name='Test')
         prompt = service._build_system_prompt(brain)
-        assert 'LiveBrain' in prompt
+        assert 'Livebrain' in prompt
 
     def test_prompt_contains_transcript_warning(self, db):
         service = QueryExecutionService(db, MockEmbedder())
@@ -599,7 +599,7 @@ class TestExecutionTrace:
         interactions = interaction_repo.get_by_session(session.id)
         interaction = interactions[0]
         assert interaction.system_prompt is not None
-        assert 'LiveBrain' in interaction.system_prompt
+        assert 'Livebrain' in interaction.system_prompt
         assert interaction.tools is not None
         assert isinstance(interaction.tools, list)
         assert interaction.messages is not None

@@ -53,7 +53,7 @@ if [[ -n "$BUMP" ]]; then
 fi
 
 echo ""
-echo "Building LiveBrain v${VERSION}..."
+echo "Building Livebrain v${VERSION}..."
 echo ""
 
 ./build.sh
@@ -63,7 +63,7 @@ echo "==================================="
 echo "Release Summary"
 echo "==================================="
 echo "Version:  ${VERSION}"
-echo "DMG:      ${SCRIPT_DIR}/LiveBrain-${VERSION}.dmg"
+echo "DMG:      ${SCRIPT_DIR}/Livebrain-${VERSION}.dmg"
 echo ""
 echo "Next steps:"
 echo "  1. Upload DMG to server:  cd ../scripts && ./deploy-app.sh"

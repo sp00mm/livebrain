@@ -34,7 +34,7 @@ class Database:
     def get_default_db_path() -> str:
         """Get the default database path for the platform."""
         if sys.platform == 'darwin':
-            app_support = os.path.expanduser("~/Library/Application Support/LiveBrain")
+            app_support = os.path.expanduser("~/Library/Application Support/Livebrain")
         else:
             app_support = os.path.expanduser("~/.livebrain")
         os.makedirs(app_support, exist_ok=True)

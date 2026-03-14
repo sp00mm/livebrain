@@ -31,7 +31,7 @@ class Updater:
         return {'available': False}
     
     def download_update(self, url, callback=None):
-        temp_file = os.path.expanduser("~/Downloads/LiveBrain-Update.dmg")
+        temp_file = os.path.expanduser("~/Downloads/Livebrain-Update.dmg")
         urllib.request.urlretrieve(url, temp_file, callback)
         return temp_file
     

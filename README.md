@@ -1,4 +1,4 @@
-# LiveBrain
+# Livebrain
 
 A minimal document search application with local AI embeddings.
 
@@ -26,7 +26,7 @@ On first run, the app will download embedding models (~160MB) from Oracle Object
 
 All user data is stored in:
 ```
-~/Library/Application Support/LiveBrain/
+~/Library/Application Support/Livebrain/
 ├── models/                      # AI embedding models (600MB)
 └── livebrain.db                 # Your indexed documents
 ```
@@ -35,14 +35,14 @@ All user data is stored in:
 
 To backup your indexed documents:
 ```bash
-cp ~/Library/Application\ Support/LiveBrain/livebrain.db ~/backup/
+cp ~/Library/Application\ Support/Livebrain/livebrain.db ~/backup/
 ```
 
 ### Clear Cache
 
 To remove all data and start fresh:
 ```bash
-rm -rf ~/Library/Application\ Support/LiveBrain/
+rm -rf ~/Library/Application\ Support/Livebrain/
 ```
 
 On next launch, the app will re-download models.

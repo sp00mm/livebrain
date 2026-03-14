@@ -35,7 +35,7 @@ class StatusBarDelegate(NSObject):
         if not self._quit_menu:
             self._quit_menu = NSMenu.alloc().init()
             quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                'Quit LiveBrain', 'quitClicked:', 'q'
+                'Quit Livebrain', 'quitClicked:', 'q'
             )
             quit_item.setTarget_(self)
             self._quit_menu.addItem_(quit_item)

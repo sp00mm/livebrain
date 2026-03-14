@@ -21,7 +21,7 @@ class ApiKeyView(QWidget):
         header.setStyleSheet('font-size: 22px; font-weight: 700;')
         layout.addWidget(header)
 
-        desc = QLabel('Paste your API key to power LiveBrain')
+        desc = QLabel('Paste your API key to power Livebrain')
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 14px;')
         layout.addWidget(desc)

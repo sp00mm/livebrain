@@ -15,7 +15,7 @@ def get_version():
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName('LiveBrain')
+    app.setApplicationName('Livebrain')
     app.setApplicationVersion(get_version())
     app.setQuitOnLastWindowClosed(False)
 
