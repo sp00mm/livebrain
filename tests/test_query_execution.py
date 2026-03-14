@@ -501,21 +501,17 @@ class TestToolCallDetail:
     def test_dataclass(self):
         from models import ToolCallDetail
         detail = ToolCallDetail(
-            query='revenue growth',
-            results_count=5,
-            matched_files=['report.pdf', 'notes.txt'],
-            duration_ms=42
+            summary='Searched: "revenue growth"',
+            details=[('Found in', 'report.pdf, notes.txt'), ('5 results', '')],
         )
-        assert detail.query == 'revenue growth'
-        assert detail.results_count == 5
-        assert len(detail.matched_files) == 2
-        assert detail.duration_ms == 42
+        assert detail.summary == 'Searched: "revenue growth"'
+        assert len(detail.details) == 2
 
     def test_defaults(self):
         from models import ToolCallDetail
         detail = ToolCallDetail()
-        assert detail.matched_files == []
-        assert detail.duration_ms == 0
+        assert detail.summary == ''
+        assert detail.details == []
 
 
 class TestToolExecution:

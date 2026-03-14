@@ -239,10 +239,8 @@ class ChatFeedItem:
 
 @dataclass
 class ToolCallDetail:
-    query: str = ''
-    results_count: int = 0
-    matched_files: list[str] = field(default_factory=list)
-    duration_ms: int = 0
+    summary: str = ''
+    details: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
