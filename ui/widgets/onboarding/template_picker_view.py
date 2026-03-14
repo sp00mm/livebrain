@@ -93,25 +93,11 @@ class TemplatePickerView(QWidget):
             card.clicked.connect(self.template_selected)
             grid.addWidget(card, i // 2, i % 2)
 
+        custom_card = TemplateCard('custom', '+ Build Your Own', 'Start from scratch')
+        custom_card.clicked.connect(lambda _: self.custom_selected.emit())
+        grid.addWidget(custom_card, len(templates) // 2, len(templates) % 2)
+
         layout.addLayout(grid)
-
-        layout.addSpacing(8)
-
-        custom_btn = QPushButton('Build Your Own')
-        custom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        custom_btn.setFixedWidth(200)
-        custom_btn.setStyleSheet(f'''
-            QPushButton {{
-                background-color: {ACCENT};
-                border: none;
-                border-radius: 8px;
-                padding: 10px 20px;
-                font-size: 15px;
-                font-weight: 600;
-            }}
-        ''')
-        custom_btn.clicked.connect(self.custom_selected)
-        layout.addWidget(custom_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
     def set_show_back(self, show: bool):
         self._back_btn.setVisible(show)
