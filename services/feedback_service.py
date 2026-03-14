@@ -1,6 +1,5 @@
 import json
 import os
-import ssl
 import urllib.request
 
 from services.database import (
@@ -63,6 +62,8 @@ class SessionPackager:
 
 
 class FeedbackClient:
+    API_KEY = 'HVEAOdoSw3R2v8ZGlkkCuGV-qk15KP-5cXMQvvkPAO4'
+
     def __init__(self, server_url: str = None):
         self._url = server_url or os.environ.get(
             'LIVEBRAIN_FEEDBACK_URL', 'https://livebrain.app/api/feedback'
@@ -73,11 +74,11 @@ class FeedbackClient:
         req = urllib.request.Request(
             self._url,
             data=data,
-            headers={'Content-Type': 'application/json'},
+            headers={
+                'Content-Type': 'application/json',
+                'X-API-Key': self.API_KEY,
+            },
             method='POST'
         )
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with urllib.request.urlopen(req, context=ctx) as resp:
+        with urllib.request.urlopen(req) as resp:
             return 200 <= resp.status < 300
