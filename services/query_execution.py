@@ -187,10 +187,8 @@ class QueryExecutionService:
         self._complete_step(step.id, callbacks.on_step)
 
         callbacks.on_tool_call(ToolCallDetail(
-            query=args.get('query', ''),
-            results_count=len(result.file_refs),
-            matched_files=[r.display_name for r in result.file_refs],
-            duration_ms=tool_duration
+            summary=result.summary,
+            details=result.details + [(f'{tool_duration}ms', '')],
         ))
 
         self._tool_call_repo.create(ToolCallRecord(

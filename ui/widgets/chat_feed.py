@@ -178,7 +178,7 @@ class ToolCallItem(QFrame):
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(4)
 
-        summary = QLabel(f'Searched: "{detail.query}"')
+        summary = QLabel(detail.summary)
         summary.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 13px;')
         summary.setWordWrap(True)
         layout.addWidget(summary)
@@ -189,16 +189,12 @@ class ToolCallItem(QFrame):
         detail_layout.setContentsMargins(0, 4, 0, 0)
         detail_layout.setSpacing(2)
 
-        if detail.matched_files:
-            files_text = ', '.join(detail.matched_files)
-            files_label = QLabel(f'Found in: {files_text}')
-            files_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
-            files_label.setWordWrap(True)
-            detail_layout.addWidget(files_label)
-
-        meta_label = QLabel(f'{detail.results_count} results \u00b7 {detail.duration_ms}ms')
-        meta_label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
-        detail_layout.addWidget(meta_label)
+        for key, value in detail.details:
+            text = f'{key}: {value}' if value else key
+            label = QLabel(text)
+            label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
+            label.setWordWrap(True)
+            detail_layout.addWidget(label)
 
         layout.addWidget(self._detail_widget)
 
