@@ -71,9 +71,11 @@ create-dmg \
 if [ "$SIGN" = true ]; then
     IDENTITY="Developer ID Application: Genfit LLC (VWVKXWHBS8)"
 
-    echo "Signing all binaries inside app bundle..."
-    find Livebrain.app -type f \( -name '*.so' -o -name '*.dylib' \) | while read f; do
-        codesign --force --options runtime --timestamp --sign "$IDENTITY" "$f"
+    echo "Signing all Mach-O binaries inside app bundle..."
+    find Livebrain.app -type f | while read f; do
+        if file "$f" | grep -q 'Mach-O'; then
+            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$f"
+        fi
     done
 
     echo "Signing app bundle..."
