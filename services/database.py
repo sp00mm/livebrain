@@ -110,9 +110,12 @@ def _dt_to_str(dt: Optional[datetime]) -> Optional[str]:
     """Convert datetime to ISO string."""
     return dt.isoformat() if dt else None
 
-def _str_to_dt(s: Optional[str]) -> Optional[datetime]:
-    """Convert ISO string to datetime."""
-    return datetime.fromisoformat(s) if s else None
+def _str_to_dt(s) -> Optional[datetime]:
+    if not s:
+        return None
+    if isinstance(s, datetime):
+        return s
+    return datetime.fromisoformat(str(s))
 
 
 # =============================================================================

@@ -106,6 +106,17 @@ class AudioService:
         self._current_thread.wait()
         self._current_thread = None
 
+        for speaker, text in self._partial_transcripts.items():
+            if text.strip():
+                entry = TranscriptEntry(
+                    session_id=self._current_session.id,
+                    speaker=SpeakerType(speaker),
+                    text=text.strip(),
+                    confidence=0.5,
+                    timestamp=now()
+                )
+                self.transcript_repo.create(entry)
+
         self.session_repo.end_session(self._current_session.id)
         session = self.session_repo.get(self._current_session.id)
         self._current_session = None

@@ -407,8 +407,14 @@ class LiveView(QWidget):
         if settings.feedback_opt_in is False:
             return
         item = self._chat_feed.add_feedback_item()
-        item.rated.connect(lambda rating: self._session_repo.set_rating(session_id, rating))
+        item.rated.connect(lambda rating, sid=session_id: self._submit_feedback(sid, rating))
         item.dismissed.connect(lambda: None)
+
+    def _submit_feedback(self, session_id: str, rating: int):
+        self._session_repo.set_rating(session_id, rating)
+        from services.feedback_service import SessionPackager, FeedbackClient
+        package = SessionPackager(self.app.db).package(session_id, rating)
+        FeedbackClient().submit(package)
 
     def _add_export_item(self, session_id: str):
         item = self._chat_feed.add_export_item()
