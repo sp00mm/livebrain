@@ -1,0 +1,17 @@
+Q3 2025 Quarterly Report
+
+Revenue: $4.2M (up 23% YoY)
+Operating Expenses: $2.8M
+Net Income: $1.4M
+Customer Count: 1,247 (up from 892)
+
+Key Highlights:
+- Launched enterprise tier in July, contributing $800K in new ARR
+- Reduced churn rate from 5.2% to 3.1% through improved onboarding
+- Hired 12 new engineers, bringing total headcount to 67
+- Closed Series B at $45M valuation
+
+Risks:
+- Dependency on single cloud provider (AWS) for 94% of infrastructure
+- Two large enterprise deals ($500K+ ARR each) still in negotiation
+- Engineering velocity slowed in August due to tech debt sprint

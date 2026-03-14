@@ -1,0 +1,15 @@
+Product Team Meeting - September 15, 2025
+
+Attendees: Sarah Chen (PM), Mike Torres (Eng Lead), Lisa Park (Design), James Wu (Data)
+
+Action Items:
+1. Mike: Finish API v2 migration by October 1st
+2. Lisa: User testing for new dashboard by September 22nd
+3. James: Set up A/B test for recommendation engine
+4. Sarah: Write PRD for mobile notifications feature
+
+Discussion Notes:
+- Dashboard redesign is 80% complete, blocked on new charting library selection
+- API v2 breaking changes require 30-day deprecation notice to partners
+- Recommendation engine showing 15% improvement in click-through rate in staging
+- Mobile app crash rate spiked to 2.3% after last release, hotfix planned for Friday
