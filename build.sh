@@ -27,6 +27,7 @@ fi
 $PYTHON -m nuitka --standalone \
   --macos-create-app-bundle \
   --enable-plugin=pyside6 \
+  --macos-app-icon=resources/icon.icns \
   --macos-app-name="LiveBrain" \
   --macos-app-version="${VERSION}" \
   --nofollow-import-to=models \

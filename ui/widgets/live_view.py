@@ -5,7 +5,8 @@ from PySide6.QtWidgets import (
     QLineEdit, QLabel, QComboBox, QScrollArea, QFrame,
     QSizePolicy, QStackedWidget
 )
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtWidgets import QGraphicsOpacityEffect
 
 import qtawesome as qta
 
@@ -94,8 +95,6 @@ class LiveView(QWidget):
         self._final_transcripts: list[TranscriptEntry] = []
         self._partial_entry: Optional[TranscriptEntry] = None
         self._whisper_thread: Optional[WhisperTranscriptionThread] = None
-        self._dot_visible = True
-
         self.setStyleSheet(STYLE_SHEET)
         self._setup_ui()
         self.refresh_brains()
@@ -240,9 +239,15 @@ class LiveView(QWidget):
         self._recording_dot.setFixedSize(16, 16)
         self._recording_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._recording_dot.setStyleSheet(f'color: {RECORDING_COLOR}; font-size: 10px;')
-        self._dot_timer = QTimer(self)
-        self._dot_timer.setInterval(600)
-        self._dot_timer.timeout.connect(self._blink_dot)
+        self._dot_opacity = QGraphicsOpacityEffect(self._recording_dot)
+        self._recording_dot.setGraphicsEffect(self._dot_opacity)
+        self._dot_anim = QPropertyAnimation(self._dot_opacity, b'opacity')
+        self._dot_anim.setDuration(800)
+        self._dot_anim.setKeyValueAt(0, 1.0)
+        self._dot_anim.setKeyValueAt(0.5, 0.15)
+        self._dot_anim.setKeyValueAt(1, 1.0)
+        self._dot_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._dot_anim.setLoopCount(-1)
         listening_layout.addWidget(self._recording_dot)
 
         self._mode_toggle = ModeToggle()
@@ -415,7 +420,7 @@ class LiveView(QWidget):
         self._listening_bar.setVisible(True)
         self._listening_text.setText('')
         self._waveform.clear()
-        self._dot_timer.start()
+        self._dot_anim.start()
 
         thread = self.app.audio_service.get_audio_thread()
         if thread:
@@ -427,17 +432,12 @@ class LiveView(QWidget):
         self._record_btn.setVisible(True)
         self._listening_bar.setVisible(False)
         self._waveform.clear()
-        self._dot_timer.stop()
-        self._recording_dot.setVisible(True)
-        self._dot_visible = True
+        self._dot_anim.stop()
+        self._dot_opacity.setOpacity(1.0)
         self._mode_toggle.set_mode('live_captions')
         if recording_session_id:
             self._maybe_show_feedback(recording_session_id)
         self._start_new_session()
-
-    def _blink_dot(self):
-        self._dot_visible = not self._dot_visible
-        self._recording_dot.setVisible(self._dot_visible)
 
     def _maybe_show_feedback(self, session_id: str):
         settings = self._settings_repo.get()

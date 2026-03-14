@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel
 from PySide6.QtCore import Qt, Signal
+import qtawesome as qta
 
 from ui.styles import BASE_STYLE, ACCENT, TEXT_SECONDARY, FONT_FAMILY
 
@@ -14,6 +15,11 @@ class WelcomeView(QWidget):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(16)
+
+        brain_icon = QLabel()
+        brain_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brain_icon.setPixmap(qta.icon('mdi.brain', color=ACCENT).pixmap(48, 48))
+        layout.addWidget(brain_icon)
 
         title = QLabel('LiveBrain')
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)

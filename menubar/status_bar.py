@@ -6,8 +6,10 @@ from AppKit import (
     NSMenu, NSMenuItem, NSApp, NSLeftMouseUpMask,
     NSRightMouseUpMask
 )
-from Foundation import NSObject
+from Foundation import NSObject, NSData
 from objc import super as objc_super
+import qtawesome as qta
+from PySide6.QtCore import QBuffer, QIODevice
 
 NSEVENT_RIGHT_MOUSE_UP = 3
 
@@ -82,13 +84,28 @@ class StatusBarController:
             image.setTemplate_(is_template)
         return image
 
+    def _render_qta_fallback(self) -> Optional[NSImage]:
+        pixmap = qta.icon('mdi.brain', color='white').pixmap(36, 36)
+        buf = QBuffer()
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        pixmap.save(buf, 'PNG')
+        data = NSData.dataWithBytes_length_(bytes(buf.data()), buf.size())
+        buf.close()
+        ns_image = NSImage.alloc().initWithData_(data)
+        if ns_image:
+            ns_image.setSize_((18, 18))
+            ns_image.setTemplate_(True)
+        return ns_image
+
     def _set_icon(self, image: Optional[NSImage]):
         button = self._status_item.button()
+        if not image:
+            image = self._render_qta_fallback()
         if image:
             button.setImage_(image)
             button.setTitle_('')
         else:
-            button.setTitle_('🧠')
+            button.setTitle_('LB')
             button.setImage_(None)
 
     def set_recording(self, recording: bool):

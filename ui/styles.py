@@ -122,7 +122,6 @@ QComboBox::down-arrow {{
 QComboBox QAbstractItemView {{
     background-color: {BG_SECONDARY};
     border: 1px solid {BG_ICON_HOVER};
-    border-radius: 6px;
     selection-background-color: {BG_ICON_HOVER};
     color: {TEXT_PRIMARY};
     padding: 4px;

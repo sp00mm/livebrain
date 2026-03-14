@@ -229,7 +229,7 @@ class FeedbackItem(QFrame):
         row.setContentsMargins(10, 4, 10, 4)
         row.setSpacing(6)
 
-        prompt = QLabel('How was this session? \u00b7 <span style="font-size: 9px;">rating may share anonymized data</span>')
+        prompt = QLabel('How was the session? \u00b7 <span style="font-size: 9px;">rating help us improve by sharing anonymized data</span>')
         prompt.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
         row.addWidget(prompt)
 
