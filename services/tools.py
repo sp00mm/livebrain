@@ -44,6 +44,9 @@ class ToolRegistry:
     def get(self, name: str) -> Tool:
         return self._tools[name]
 
+    def get_available(self, ctx: ToolContext) -> list[Tool]:
+        return [t for t in self._tools.values() if t.should_include(ctx)]
+
     def build_schemas(self, ctx: ToolContext) -> list[dict]:
         schemas = [
             {'type': 'web_search'},
@@ -120,7 +123,7 @@ def _handle_search_files(args: dict, ctx: ToolContext) -> ToolResult:
 
 REGISTRY.register(Tool(
     name='search_files',
-    description='Search through scanned folders for relevant content',
+    description='Search files: search through scanned folders for relevant content. Always search first, never ask what to look for.',
     schema=SEARCH_FILES_SCHEMA,
     handler=_handle_search_files,
     should_include=lambda ctx: bool(ctx.folder_ids),
