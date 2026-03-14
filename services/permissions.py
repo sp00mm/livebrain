@@ -40,8 +40,9 @@ def request_microphone(callback):
 
 
 def request_speech_recognition(callback):
-    import Speech as SF
-    SF.SFSpeechRecognizer.requestAuthorization_(lambda status: callback(status == 3))
+    import subprocess
+    subprocess.Popen(['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition'])
+    callback(False)
 
 
 def request_screen_recording(callback):
