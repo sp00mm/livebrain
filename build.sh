@@ -71,11 +71,16 @@ create-dmg \
 if [ "$SIGN" = true ]; then
     IDENTITY="Developer ID Application: Genfit LLC (VWVKXWHBS8)"
 
+    echo "Signing all binaries inside app bundle..."
+    find Livebrain.app -type f \( -name '*.so' -o -name '*.dylib' \) | while read f; do
+        codesign --force --options runtime --timestamp --sign "$IDENTITY" "$f"
+    done
+
     echo "Signing app bundle..."
-    codesign --deep --force --options runtime --sign "$IDENTITY" Livebrain.app
+    codesign --force --options runtime --timestamp --sign "$IDENTITY" Livebrain.app
 
     echo "Signing DMG..."
-    codesign --force --sign "$IDENTITY" "Livebrain-${VERSION}.dmg"
+    codesign --force --timestamp --sign "$IDENTITY" "Livebrain-${VERSION}.dmg"
 
     # One-time setup: xcrun notarytool store-credentials "livebrain-notary" --apple-id YOUR_APPLE_ID --team-id VWVKXWHBS8
     echo "Submitting for notarization..."
