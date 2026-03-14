@@ -568,9 +568,9 @@ class SessionRepository:
             audio_output_device=row[3],
             is_live=bool(row[4]),
             current_brain_id=row[5],
-            rating=row[6],
-            created_at=_str_to_dt(row[7]),
-            ended_at=_str_to_dt(row[8])
+            created_at=_str_to_dt(row[6]),
+            ended_at=_str_to_dt(row[7]),
+            rating=row[8]
         )
 
 
