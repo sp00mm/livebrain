@@ -7,8 +7,15 @@ import zipfile
 UPDATE_URL = os.environ.get('LIVEBRAIN_UPDATE_URL', 'https://livebrain.app/version.json')
 MODEL_URL = os.environ.get('LIVEBRAIN_MODEL_URL', 'https://axa3tfnfy6dd.objectstorage.us-chicago-1.oci.customer-oci.com/p/V4u-uKDpP_p2kHbWEZPQZ0sEBe0-qZCqW5i3yu3fK-VC-ZIgCxd8rm7wdK6fL6NV/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip')
 
+def _app_root():
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    if os.path.exists(os.path.join(d, 'version.json')):
+        return d
+    import sys
+    return os.path.dirname(sys.executable)
+
 def get_version():
-    version_file = os.path.join(os.path.dirname(__file__), '..', 'version.json')
+    version_file = os.path.join(_app_root(), 'version.json')
     with open(version_file, 'r') as f:
         return json.load(f)['version']
 

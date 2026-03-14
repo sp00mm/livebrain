@@ -7,7 +7,6 @@ def install():
     import platform
     import traceback
     import urllib.request
-    from threading import Thread
     from services.updater import get_version
 
     crash_url = os.environ.get(
@@ -16,7 +15,8 @@ def install():
     api_key = 'HVEAOdoSw3R2v8ZGlkkCuGV-qk15KP-5cXMQvvkPAO4'
     original_hook = sys.excepthook
 
-    def report(exc_type, exc_value, exc_tb):
+    def hook(exc_type, exc_value, exc_tb):
+        original_hook(exc_type, exc_value, exc_tb)
         try:
             data = json.dumps({
                 'app_version': get_version(),
@@ -31,12 +31,8 @@ def install():
                 headers={'Content-Type': 'application/json', 'X-API-Key': api_key},
                 method='POST'
             )
-            urllib.request.urlopen(req)
+            urllib.request.urlopen(req, timeout=5)
         except Exception:
             pass
-
-    def hook(exc_type, exc_value, exc_tb):
-        Thread(target=report, args=(exc_type, exc_value, exc_tb), daemon=True).start()
-        original_hook(exc_type, exc_value, exc_tb)
 
     sys.excepthook = hook

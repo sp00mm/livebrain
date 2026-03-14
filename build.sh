@@ -13,7 +13,8 @@ echo "Building Livebrain v${VERSION}..."
 
 # Clean up previous build (keep main.build for cache)
 echo "Cleaning up previous build..."
-rm -rf main.app Livebrain.app main.dist Livebrain-*.dmg 2>/dev/null
+rm -rf main.app Livebrain.app main.dist 2>/dev/null || true
+rm -f Livebrain-*.dmg 2>/dev/null || true
 
 # Use virtual environment Python directly
 if [ -f "venv/bin/python" ]; then
@@ -31,10 +32,23 @@ $PYTHON -m nuitka --standalone \
   --macos-app-icon=resources/icon.icns \
   --macos-app-name="Livebrain" \
   --macos-app-version="${VERSION}" \
-  --nofollow-import-to=models \
+  --nofollow-import-to=AppKit \
+  --nofollow-import-to=Foundation \
+  --nofollow-import-to=CoreFoundation \
+  --nofollow-import-to=objc \
+  --nofollow-import-to=PyObjCTools \
+  --nofollow-import-to=Cocoa \
+  --nofollow-import-to=AVFoundation \
+  --nofollow-import-to=AVFAudio \
+  --nofollow-import-to=CoreAudio \
+  --nofollow-import-to=CoreMedia \
+  --nofollow-import-to=ScreenCaptureKit \
+  --nofollow-import-to=Quartz \
+  --nofollow-import-to=HIServices \
   --static-libpython=no \
   --include-data-files=version.json=version.json \
   --include-data-dir=resources=resources \
+  --include-data-dir=db=db \
   main.py
 
 # Rename app bundle
@@ -54,6 +68,18 @@ fi
 echo "Removing models from bundle..."
 rm -rf Livebrain.app/Contents/MacOS/models 2>/dev/null || true
 
+# Copy PyObjC packages to Resources (excluded from compilation, needed at runtime)
+echo "Bundling PyObjC frameworks..."
+SITE_PACKAGES="venv/lib/python3.12/site-packages"
+PYOBJC_DIR="Livebrain.app/Contents/Resources/pyobjc"
+mkdir -p "$PYOBJC_DIR"
+for pkg in objc PyObjCTools AppKit Foundation CoreFoundation Cocoa AVFoundation AVFAudio CoreAudio CoreMedia ScreenCaptureKit Quartz HIServices; do
+    if [ -d "$SITE_PACKAGES/$pkg" ]; then
+        cp -R "$SITE_PACKAGES/$pkg" "$PYOBJC_DIR/"
+    fi
+done
+find "$PYOBJC_DIR" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
 # Set LSUIElement to hide dock icon (menu bar app only)
 echo "Setting LSUIElement for menu bar app..."
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" Livebrain.app/Contents/Info.plist 2>/dev/null || \
@@ -65,12 +91,12 @@ if [ "$SIGN" = true ]; then
     echo "Signing all Mach-O binaries inside app bundle..."
     find Livebrain.app -type f | while read f; do
         if file "$f" | grep -q 'Mach-O'; then
-            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$f"
+            codesign --force --options runtime --timestamp --entitlements entitlements.plist --sign "$IDENTITY" "$f"
         fi
     done
 
     echo "Signing app bundle..."
-    codesign --force --options runtime --timestamp --sign "$IDENTITY" Livebrain.app
+    codesign --deep --force --options runtime --timestamp --entitlements entitlements.plist --sign "$IDENTITY" Livebrain.app
 fi
 
 echo "Creating DMG..."

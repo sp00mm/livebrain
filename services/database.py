@@ -47,7 +47,9 @@ class Database:
 class Migrator:
     def __init__(self, conn):
         self._conn = conn
-        self._migrations_dir = os.path.join(os.path.dirname(__file__), '..', 'db', 'migrations')
+        self._migrations_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'db', 'migrations')
+        if not os.path.exists(self._migrations_dir):
+            self._migrations_dir = os.path.join(os.path.dirname(sys.executable), 'db', 'migrations')
 
     def _has_column(self, table, column):
         rows = self._conn.execute(f'PRAGMA table_info({table})').fetchall()

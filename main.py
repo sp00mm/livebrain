@@ -1,7 +1,11 @@
 import os
-os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-
 import sys
+
+pyobjc_path = os.path.join(os.path.dirname(sys.executable), '..', 'Resources', 'pyobjc')
+if os.path.exists(pyobjc_path):
+    sys.path.insert(0, pyobjc_path)
+
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 import json
 from PySide6.QtWidgets import QApplication
 from menubar import MenuBarApp

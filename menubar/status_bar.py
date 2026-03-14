@@ -1,4 +1,5 @@
 import os
+import sys
 from typing import Callable, Optional
 
 from AppKit import (
@@ -67,7 +68,9 @@ class StatusBarController:
         self._recording = False
 
     def _load_icons(self):
-        resources_dir = os.path.join(os.path.dirname(__file__), '..', 'resources')
+        resources_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'resources')
+        if not os.path.exists(resources_dir):
+            resources_dir = os.path.join(os.path.dirname(sys.executable), 'resources')
 
         icon_path = os.path.join(resources_dir, 'icon.png')
         icon_recording_path = os.path.join(resources_dir, 'icon_recording.png')
