@@ -36,6 +36,8 @@ TRANSCRIPT_OTHER_COLOR = '#666666'
 
 AUDIT_STEP_COLOR = '#888888'
 
+LINK_COLOR = '#6eb5ff'
+
 FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif'
 FONT_SIZE = '13px'
 

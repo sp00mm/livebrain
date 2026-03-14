@@ -13,9 +13,9 @@ from PySide6.QtGui import QDesktopServices
 
 from models import FeedItemType
 from ui.styles import (
-    BG_CARD, TEXT_SECONDARY, TEXT_DIM,
+    BG_CARD, BG_SECONDARY, BG_BUTTON, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM,
     FEED_QUESTION_BG, FEED_ANSWER_ACTIVE,
-    FEED_ANSWER_FADED, FEED_STATUS_COLOR, FONT_FAMILY,
+    FEED_ANSWER_FADED, FEED_STATUS_COLOR, FONT_FAMILY, LINK_COLOR,
     TRANSCRIPT_YOU_COLOR, TRANSCRIPT_OTHER_COLOR
 )
 from ui.markdown_renderer import render_markdown
@@ -25,7 +25,7 @@ class TranscriptDividerItem(QFrame):
     def __init__(self, text='', parent=None):
         super().__init__(parent)
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(8, 4, 8, 4)
+        self._layout.setContentsMargins(10, 6, 10, 6)
         self._layout.setSpacing(2)
         self._build_lines(text)
 
@@ -58,8 +58,8 @@ class QuestionItem(QFrame):
         label = QLabel(text)
         label.setWordWrap(True)
         label.setStyleSheet(f'''
-            color: {TEXT_SECONDARY};
-            font-size: 12px;
+            color: {TEXT_PRIMARY};
+            font-size: 13px;
             font-weight: 500;
         ''')
         layout.addWidget(label)
@@ -76,7 +76,7 @@ class AnswerItem(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(10, 8, 10, 8)
+        self._layout.setContentsMargins(10, 6, 10, 6)
 
         self._browser = QTextBrowser()
         self._browser.setOpenLinks(False)
@@ -147,10 +147,10 @@ class AnswerItem(QFrame):
         color = FEED_ANSWER_FADED if self._faded else FEED_ANSWER_ACTIVE
         return f'''<style>
 body {{ color: {color}; font-size: 13px; font-family: {FONT_FAMILY}; margin: 0; padding: 0; }}
-code {{ background: #2a2a2a; padding: 1px 4px; border-radius: 3px; font-size: 12px; }}
-pre {{ background: #2a2a2a; padding: 8px; border-radius: 6px; }}
+code {{ background: {BG_SECONDARY}; padding: 1px 4px; border-radius: 3px; font-size: 11px; }}
+pre {{ background: {BG_SECONDARY}; padding: 8px; border-radius: 6px; }}
 pre code {{ background: none; padding: 0; }}
-a {{ color: #6eb5ff; }}
+a {{ color: {LINK_COLOR}; }}
 h1, h2, h3 {{ margin: 8px 0 4px 0; }}
 p {{ margin: 4px 0; }}
 ul, ol {{ margin: 4px 0; padding-left: 20px; }}
@@ -179,7 +179,7 @@ class ToolCallItem(QFrame):
         layout.setSpacing(4)
 
         summary = QLabel(f'Searched: "{detail.query}"')
-        summary.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px;')
+        summary.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 13px;')
         summary.setWordWrap(True)
         layout.addWidget(summary)
 
@@ -226,10 +226,10 @@ class FeedbackItem(QFrame):
         super().__init__(parent)
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(10, 4, 10, 4)
+        row.setContentsMargins(10, 6, 10, 6)
         row.setSpacing(6)
 
-        prompt = QLabel('How was the session? \u00b7 <span style="font-size: 9px;">rating help us improve by sharing anonymized data</span>')
+        prompt = QLabel('Help us improve \u00b7 rating may share anonymized data')
         prompt.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
         row.addWidget(prompt)
 
@@ -240,7 +240,7 @@ class FeedbackItem(QFrame):
             btn.setIcon(qta.icon(icon_name, color=TEXT_DIM))
             btn.setFixedSize(22, 22)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet('QPushButton { background: transparent; border: none; } QPushButton:hover { background-color: #3a3a3a; border-radius: 4px; }')
+            btn.setStyleSheet(f'QPushButton {{ background: transparent; border: none; }} QPushButton:hover {{ background-color: {BG_BUTTON}; border-radius: 4px; }}')
             btn.clicked.connect(lambda _, r=rating: self._on_rated(r))
             row.addWidget(btn)
 
@@ -248,7 +248,7 @@ class FeedbackItem(QFrame):
         dismiss_btn.setIcon(qta.icon('fa5s.times', color=TEXT_DIM))
         dismiss_btn.setFixedSize(22, 22)
         dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        dismiss_btn.setStyleSheet(f'QPushButton {{ background: transparent; border: none; }} QPushButton:hover {{ background-color: #3a3a3a; border-radius: 4px; }}')
+        dismiss_btn.setStyleSheet(f'QPushButton {{ background: transparent; border: none; }} QPushButton:hover {{ background-color: {BG_BUTTON}; border-radius: 4px; }}')
         dismiss_btn.clicked.connect(self._on_dismissed)
         row.addWidget(dismiss_btn)
 
@@ -279,14 +279,14 @@ class ExportItem(QFrame):
         super().__init__(parent)
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(10, 4, 10, 4)
+        row.setContentsMargins(10, 6, 10, 6)
         row.setSpacing(6)
 
         btn = QPushButton()
         btn.setIcon(qta.icon('mdi.file-export', color=TEXT_DIM))
         btn.setFixedSize(22, 22)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setStyleSheet('QPushButton { background: transparent; border: none; } QPushButton:hover { background-color: #3a3a3a; border-radius: 4px; }')
+        btn.setStyleSheet(f'QPushButton {{ background: transparent; border: none; }} QPushButton:hover {{ background-color: {BG_BUTTON}; border-radius: 4px; }}')
         btn.clicked.connect(self.clicked.emit)
         row.addWidget(btn)
 
