@@ -1,67 +1,69 @@
 # Livebrain
 
-A minimal document search application with local AI embeddings.
+Real-time AI for live conversations. A macOS menu bar app that transcribes meetings in real-time, answers questions about the conversation, and searches your files.
+
+[Download](https://livebrain.app) | [Website](https://livebrain.app)
 
 ## Features
 
-- Index local directories recursively
-- Full-text search with semantic embeddings
-- Supports text files, PDFs, and common formats
-- All processing happens locally
-- Fast vector similarity search
+- **Live transcription** — Captures mic and system audio from any app (Zoom, Meet, Teams, Slack)
+- **Ask questions** — Click presets or type your own. AI understands the full conversation context
+- **Search your files** — Attach folders and search documents during conversations
+- **On-device transcription** — Apple Speech runs locally. No audio leaves your Mac
+- **5 built-in templates** — Interview, stand-up, sales call, debate, lecture
+- **Menu bar native** — Lives in your status bar. No dock icon, no clutter
 
-## Installation
+## Install
 
-Download the latest release from [yourdomain.com/livebrain](https://yourdomain.com/livebrain)
+Download the latest DMG from [livebrain.app](https://livebrain.app). Requires macOS 14+.
 
-On first run, the app will download embedding models (~160MB) from Oracle Object Storage.
-
-## Usage
-
-1. Click "Select Directory" to choose a folder to index
-2. Click "Index Directory" to scan and process all files
-3. Use the search box to find documents semantically
-
-## User Data
-
-All user data is stored in:
-```
-~/Library/Application Support/Livebrain/
-├── models/                      # AI embedding models (600MB)
-└── livebrain.db                 # Your indexed documents
-```
-
-### Backup Your Data
-
-To backup your indexed documents:
-```bash
-cp ~/Library/Application\ Support/Livebrain/livebrain.db ~/backup/
-```
-
-### Clear Cache
-
-To remove all data and start fresh:
-```bash
-rm -rf ~/Library/Application\ Support/Livebrain/
-```
-
-On next launch, the app will re-download models.
-
-## Updates
-
-The app checks for updates on launch. Updates only replace the binary (~50MB), your data and models remain untouched.
-
-## Requirements
-
-- macOS 14.0 or higher
-- ~650MB free space for first install
-- Internet connection for initial model download
+On first launch, the app downloads embedding models (~160MB) for local file search.
 
 ## Development
 
-See [DEVELOPMENT.md](../DEVELOPMENT.md) for build and deployment instructions.
+```bash
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+Run tests:
+```bash
+pytest tests/
+```
+
+Build DMG:
+```bash
+pip install nuitka
+./build.sh
+```
+
+## How it works
+
+1. Click the brain icon in your menu bar to open Livebrain
+2. Select or create a brain (workspace) for your meeting type
+3. Hit record — transcription starts immediately
+4. Ask questions or click presets while recording
+5. Attach folders to search your documents during the conversation
+
+## User data
+
+All data stays on your Mac:
+```
+~/Library/Application Support/Livebrain/
+  models/          # AI embedding models
+  livebrain.db     # Your data
+  recordings/      # Audio files
+```
+
+API keys are stored in macOS Keychain.
+
+## Requirements
+
+- macOS 14.0+
+- OpenAI API key (for AI responses)
+- ~800MB free space (models + app)
 
 ## License
 
-[Your License Here]
-
+[MIT](LICENSE)

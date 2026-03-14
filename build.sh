@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 SIGN=false
 if [ "$1" = "--sign" ]; then

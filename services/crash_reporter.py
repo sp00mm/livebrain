@@ -1,55 +1,42 @@
-import json
-import os
-import platform
 import sys
-import traceback
-import urllib.request
-from threading import Thread
-
-from services.updater import get_version
 
 
-CRASH_URL = os.environ.get(
-    'LIVEBRAIN_CRASH_URL', 'https://livebrain.app/api/crashes'
-)
+def install():
+    import json
+    import os
+    import platform
+    import traceback
+    import urllib.request
+    from threading import Thread
+    from services.updater import get_version
 
+    crash_url = os.environ.get(
+        'LIVEBRAIN_CRASH_URL', 'https://livebrain.app/api/crashes'
+    )
+    api_key = 'HVEAOdoSw3R2v8ZGlkkCuGV-qk15KP-5cXMQvvkPAO4'
+    original_hook = sys.excepthook
 
-API_KEY = 'HVEAOdoSw3R2v8ZGlkkCuGV-qk15KP-5cXMQvvkPAO4'
-
-
-class CrashReporter:
-    def report(self, exc_type, exc_value, exc_tb):
-        data = {
-            'app_version': get_version(),
-            'os_version': platform.mac_ver()[0],
-            'python_version': platform.python_version(),
-            'exception_type': exc_type.__name__,
-            'exception_message': str(exc_value),
-            'stack_trace': ''.join(traceback.format_exception(exc_type, exc_value, exc_tb)),
-        }
+    def report(exc_type, exc_value, exc_tb):
         try:
+            data = json.dumps({
+                'app_version': get_version(),
+                'os_version': platform.mac_ver()[0],
+                'python_version': platform.python_version(),
+                'exception_type': exc_type.__name__,
+                'exception_message': str(exc_value),
+                'stack_trace': ''.join(traceback.format_exception(exc_type, exc_value, exc_tb)),
+            }).encode('utf-8')
             req = urllib.request.Request(
-                CRASH_URL,
-                data=json.dumps(data).encode('utf-8'),
-                headers={
-                    'Content-Type': 'application/json',
-                    'X-API-Key': API_KEY,
-                },
+                crash_url, data=data,
+                headers={'Content-Type': 'application/json', 'X-API-Key': api_key},
                 method='POST'
             )
             urllib.request.urlopen(req)
         except Exception:
             pass
 
+    def hook(exc_type, exc_value, exc_tb):
+        Thread(target=report, args=(exc_type, exc_value, exc_tb), daemon=True).start()
+        original_hook(exc_type, exc_value, exc_tb)
 
-_reporter = CrashReporter()
-_original_excepthook = sys.excepthook
-
-
-def _excepthook(exc_type, exc_value, exc_tb):
-    Thread(target=_reporter.report, args=(exc_type, exc_value, exc_tb), daemon=True).start()
-    _original_excepthook(exc_type, exc_value, exc_tb)
-
-
-def install():
-    sys.excepthook = _excepthook
+    sys.excepthook = hook
