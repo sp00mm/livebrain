@@ -86,7 +86,7 @@ echo "Setting LSUIElement for menu bar app..."
 /usr/libexec/PlistBuddy -c "Set :LSUIElement true" Livebrain.app/Contents/Info.plist
 
 if [ "$SIGN" = true ]; then
-    IDENTITY="Developer ID Application: Genfit LLC (VWVKXWHBS8)"
+    IDENTITY="${CODESIGN_IDENTITY:?Set CODESIGN_IDENTITY env var for code signing}"
 
     echo "Signing all Mach-O binaries inside app bundle..."
     find Livebrain.app -type f | while read f; do

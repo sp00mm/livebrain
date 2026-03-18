@@ -19,3 +19,5 @@ venv/
 models/embeddinggemma-onnx/
 *.dmg
 embeddinggemma-onnx.zip
+nuitka-crash-report.xml
+.claude/

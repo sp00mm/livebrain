@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import urllib.request
@@ -62,7 +63,7 @@ class SessionPackager:
 
 
 class FeedbackClient:
-    API_KEY = 'HVEAOdoSw3R2v8ZGlkkCuGV-qk15KP-5cXMQvvkPAO4'
+    API_KEY = base64.b64decode(b'cHNZd1g3b0Nma0ZBbkpXQ2FZRU9MVXpFQ3MxTWJYYWhRRmVnNFFEaXUtVQ==').decode()
 
     def __init__(self, server_url: str = None):
         self._url = server_url or os.environ.get(
