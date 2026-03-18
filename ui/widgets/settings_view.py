@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal
 
+from audio.devices import list_input_devices, list_output_devices
 from services.database import Database, UserSettingsRepository
 from services.secrets import secrets
 from services.updater import get_version
@@ -57,14 +58,36 @@ class SettingsView(QWidget):
         key_row.addWidget(self._key_status)
         layout.addLayout(key_row)
 
-        mic_label = QLabel('Microphone')
+        # Audio devices section
+        devices_label = QLabel('Audio Devices')
+        devices_label.setStyleSheet(f'color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 600;')
+        layout.addWidget(devices_label)
+
+        mic_label = QLabel('Input Device (Microphone)')
         mic_label.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px;')
         layout.addWidget(mic_label)
 
         self._mic_combo = QComboBox()
         self._mic_combo.setObjectName('settingsCombo')
-        self._mic_combo.addItem('System Default')
+        self._mic_combo.addItem('System Default', userData=None)
+        for dev in list_input_devices():
+            self._mic_combo.addItem(dev.name, userData=dev.id)
         layout.addWidget(self._mic_combo)
+
+        output_devices = list_output_devices()
+        if output_devices:
+            out_label = QLabel('Output Device (System Audio Source)')
+            out_label.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px;')
+            layout.addWidget(out_label)
+
+            self._output_combo = QComboBox()
+            self._output_combo.setObjectName('settingsCombo')
+            self._output_combo.addItem('System Default', userData=None)
+            for dev in output_devices:
+                self._output_combo.addItem(dev.name, userData=dev.id)
+            layout.addWidget(self._output_combo)
+        else:
+            self._output_combo = None
 
         self._feedback_check = QCheckBox('Help improve Livebrain')
         self._feedback_check.setStyleSheet(f'color: {TEXT_PRIMARY};')
@@ -123,10 +146,18 @@ class SettingsView(QWidget):
             self._key_status.setText('')
 
         settings = self.settings_repo.get()
+
         if settings.default_input_device:
-            idx = self._mic_combo.findText(settings.default_input_device)
-            if idx >= 0:
-                self._mic_combo.setCurrentIndex(idx)
+            for i in range(self._mic_combo.count()):
+                if self._mic_combo.itemData(i) == settings.default_input_device:
+                    self._mic_combo.setCurrentIndex(i)
+                    break
+
+        if self._output_combo and settings.default_output_device:
+            for i in range(self._output_combo.count()):
+                if self._output_combo.itemData(i) == settings.default_output_device:
+                    self._output_combo.setCurrentIndex(i)
+                    break
 
         self._feedback_check.setChecked(settings.feedback_opt_in is True)
 
@@ -138,8 +169,9 @@ class SettingsView(QWidget):
             self._key_status.setText('\u2713 Set')
 
         settings = self.settings_repo.get()
-        device = self._mic_combo.currentText()
-        settings.default_input_device = device if device != 'System Default' else None
+        settings.default_input_device = self._mic_combo.currentData()
+        if self._output_combo:
+            settings.default_output_device = self._output_combo.currentData()
         settings.feedback_opt_in = self._feedback_check.isChecked()
         self.settings_repo.update(settings)
 
@@ -153,7 +185,7 @@ class SettingsView(QWidget):
 
     def _download_update(self):
         if self._update_info.get('_downloaded_path'):
-            self._updater.open_dmg(self._update_info['_downloaded_path'])
+            self._updater.open_update(self._update_info['_downloaded_path'])
             return
 
         self._update_btn.setText('Downloading...')

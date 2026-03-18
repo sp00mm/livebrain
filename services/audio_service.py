@@ -1,10 +1,10 @@
 from typing import Callable, Optional
 
 from models import Session, TranscriptEntry, SpeakerType, now
-from services.database import Database, SessionRepository, TranscriptEntryRepository
+from services.database import Database, SessionRepository, TranscriptEntryRepository, UserSettingsRepository
 from ui.threads.audio_thread import AudioThread
-from audio.capture.macos import MacOSMicCapture, MacOSSystemCapture
-from audio.transcription import AppleSpeechTranscriber
+from audio.capture import create_mic_capture, create_system_capture
+from audio.transcription import create_transcriber
 
 
 class AudioService:
@@ -12,14 +12,15 @@ class AudioService:
         self.db = db
         self.session_repo = SessionRepository(db)
         self.transcript_repo = TranscriptEntryRepository(db)
+        self._settings_repo = UserSettingsRepository(db)
         self._current_thread: Optional[AudioThread] = None
         self._current_session: Optional[Session] = None
         self._partial_transcripts: dict[str, str] = {}
 
     def check_permissions(self) -> dict[str, bool]:
-        mic = MacOSMicCapture()
-        speech = AppleSpeechTranscriber()
-        system = MacOSSystemCapture()
+        mic = create_mic_capture()
+        speech = create_transcriber()
+        system = create_system_capture()
 
         return {
             'microphone': mic.is_available(),
@@ -37,9 +38,9 @@ class AudioService:
             if pending == 0:
                 callback(results)
 
-        mic = MacOSMicCapture()
-        speech = AppleSpeechTranscriber()
-        system = MacOSSystemCapture()
+        mic = create_mic_capture()
+        speech = create_transcriber()
+        system = create_system_capture()
 
         def on_mic(granted):
             results['microphone'] = granted
@@ -66,7 +67,12 @@ class AudioService:
         self._current_session = session
         self._partial_transcripts = {}
 
-        self._current_thread = AudioThread(session.id)
+        settings = self._settings_repo.get()
+        self._current_thread = AudioThread(
+            session.id,
+            input_device=settings.default_input_device,
+            output_device=settings.default_output_device
+        )
 
         def handle_transcript(speaker: str, text: str, confidence: float, is_final: bool):
             speaker_type = SpeakerType(speaker)

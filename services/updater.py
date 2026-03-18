@@ -1,5 +1,7 @@
 import os
 import json
+import subprocess
+import sys
 import urllib.request
 import zipfile
 
@@ -11,7 +13,6 @@ def _app_root():
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
     if os.path.exists(os.path.join(d, 'version.json')):
         return d
-    import sys
     return os.path.dirname(sys.executable)
 
 def get_version():
@@ -38,13 +39,14 @@ class Updater:
         return {'available': False}
     
     def download_update(self, url, callback=None):
-        temp_file = os.path.expanduser("~/Downloads/Livebrain-Update.dmg")
+        ext = '.dmg' if sys.platform == 'darwin' else '.AppImage'
+        temp_file = os.path.expanduser(f"~/Downloads/Livebrain-Update{ext}")
         urllib.request.urlretrieve(url, temp_file, callback)
         return temp_file
-    
-    def open_dmg(self, path):
-        import subprocess
-        subprocess.Popen(['open', path])
+
+    def open_update(self, path):
+        cmd = 'open' if sys.platform == 'darwin' else 'xdg-open'
+        subprocess.Popen([cmd, path])
 
     def download_models(self, dest_dir, progress_callback=None):
         os.makedirs(dest_dir, exist_ok=True)

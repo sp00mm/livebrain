@@ -4,14 +4,14 @@ from collections import deque
 from PySide6.QtCore import QThread, Signal
 
 from audio.storage import AudioStorage
-from audio.capture.macos import MacOSMicCapture, MacOSSystemCapture
-from audio.transcription import AppleSpeechTranscriber, SubprocessTranscriber
+from audio.capture import create_mic_capture, create_system_capture
+from audio.transcription import create_transcriber, create_subprocess_transcriber
 from models import SpeakerType
 
 
 class AudioThread(QThread):
-    transcript_update = Signal(str, str, float, bool)  # speaker, text, confidence, is_final
-    audio_level = Signal(float, float)  # mic_rms, system_rms
+    transcript_update = Signal(str, str, float, bool)
+    audio_level = Signal(float, float)
     status_changed = Signal(str)
     error = Signal(str)
 
@@ -21,7 +21,7 @@ class AudioThread(QThread):
     HISTORY_SIZE = 10
     MIC_RATIO_THRESHOLD = 3.0
 
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, input_device=None, output_device=None):
         super().__init__()
         self.session_id = session_id
         self._stop_requested = False
@@ -32,10 +32,10 @@ class AudioThread(QThread):
         self._transcribers_active = True
 
         self._storage = AudioStorage(session_id)
-        self._mic_capture = MacOSMicCapture()
-        self._mic_transcriber = AppleSpeechTranscriber()
-        self._system_capture = MacOSSystemCapture()
-        self._system_transcriber = SubprocessTranscriber()
+        self._mic_capture = create_mic_capture(device=input_device)
+        self._mic_transcriber = create_transcriber()
+        self._system_capture = create_system_capture(device=output_device)
+        self._system_transcriber = create_subprocess_transcriber()
 
     def run(self):
         self._stop_requested = False
@@ -43,16 +43,13 @@ class AudioThread(QThread):
 
         self._storage.start()
 
-        # Start both captures first
         self._mic_capture.on_audio = self._on_mic_audio
         self._mic_capture.start()
         self._system_capture.on_audio = self._on_system_audio
         self._system_capture.start()
 
-        # Small delay to let audio start flowing
         self.msleep(100)
 
-        # Then start transcribers
         self._mic_transcriber.start(
             lambda text, conf, final: self._on_transcript(SpeakerType.USER, text, conf, final)
         )
@@ -126,8 +123,8 @@ class AudioThread(QThread):
         self._transcribers_active = False
 
     def start_transcribers(self):
-        self._mic_transcriber = AppleSpeechTranscriber()
-        self._system_transcriber = SubprocessTranscriber()
+        self._mic_transcriber = create_transcriber()
+        self._system_transcriber = create_subprocess_transcriber()
         self._mic_transcriber.start(
             lambda text, conf, final: self._on_transcript(SpeakerType.USER, text, conf, final)
         )
