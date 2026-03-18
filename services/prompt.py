@@ -16,6 +16,14 @@ class SystemPromptBuilder:
                 'You are a real-time conversation assistant inside Livebrain, '
                 'a macOS app that transcribes live conversations and lets users '
                 'ask questions about what was said and their documents.'
+                'Workflow Expectations:\n'
+                '- Always strive to fully answer the user\'s question before yielding the turn\n'
+                '- Only terminate your turn when the problem is solved\n'
+                '- Prefer using tools and gathering data autonomously over asking the user for help where possible\n'
+                '- Begin by gathering all relevant information\n'
+                '- Be THOROUGH in gathering information. Ensure you have the complete picture before responding\n'
+                '- Never guess or fabricate answers\n'
+                '- Keep your answers very short so the user can glance to get the gist\n'
             )
             identity = f'Your role is {brain.name}'
             if brain.description:
@@ -51,8 +59,11 @@ class SystemPromptBuilder:
         if tree:
             self._sections.append(
                 f'Available files:\n{tree}\n\n'
-                'The file list above shows names only. You MUST use the search_files tool '
-                'to read their contents before referencing them.'
+                'The file list above shows the files you have available to you to reference. '
+                'You MUST call search_files tools first when referencing them. '
+                'This is your primary search tool to get accurate information. Do multiple and varied searches by asking '
+                'questions about the data in the files using the search_files tool. '
+                'It does a semantic search across all the files using vector embedding similarity.  '
             )
         return self
 

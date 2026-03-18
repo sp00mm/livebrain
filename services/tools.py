@@ -81,16 +81,26 @@ SEARCH_FILES_SCHEMA = {
 
 def _handle_search_files(args: dict, ctx: ToolContext) -> ToolResult:
     embedding = ctx.embedder.embed(args['query'], is_query=True)
-    results = ctx.rag.search(embedding, resource_ids=ctx.folder_ids, limit=10)
+    results = ctx.rag.search(embedding, resource_ids=ctx.folder_ids, limit=30)
     context_parts = []
     file_refs = []
     used_resource_ids = []
     seen_paths = set()
     seen_resource_ids = set()
+    seen_texts = set()
+    file_counts = {}
+    max_per_file = 2
     for r in results:
         resource = r['resource']
         chunk = r['chunk']
         similarity = r['similarity']
+        if chunk.text in seen_texts:
+            continue
+        seen_texts.add(chunk.text)
+        display_name = os.path.basename(chunk.filepath)
+        if file_counts.get(display_name, 0) >= max_per_file:
+            continue
+        file_counts[display_name] = file_counts.get(display_name, 0) + 1
         context_parts.append(json.dumps({
             'source': resource.name,
             'filepath': chunk.filepath,
@@ -103,13 +113,15 @@ def _handle_search_files(args: dict, ctx: ToolContext) -> ToolResult:
             file_refs.append(FileReference(
                 resource_id=resource.id,
                 filepath=chunk.filepath,
-                display_name=os.path.basename(chunk.filepath),
+                display_name=display_name,
                 relevance_score=similarity,
                 source_meta=chunk.source_meta
             ))
         if resource.id not in seen_resource_ids:
             seen_resource_ids.add(resource.id)
             used_resource_ids.append(resource.id)
+        if len(context_parts) >= 10:
+            break
 
     matched_files = [ref.display_name for ref in file_refs]
     return ToolResult(
@@ -158,7 +170,7 @@ def _handle_read_file(args: dict, ctx: ToolContext) -> ToolResult:
     )
     assert allowed, f'path outside allowed folders: {path}'
 
-    text = ctx.scanner.extract_text(path) or ''
+    text = ctx.scanner.extract_text(path)
     if len(text) > 32000:
         text = text[:32000] + '\n\n[Truncated — file is too large to show in full]'
 

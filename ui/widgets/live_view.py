@@ -188,9 +188,8 @@ class LiveView(QWidget):
         if not self._session:
             return
         from ui.widgets.audit_view import AuditWindow
-        if hasattr(self, '_audit_window') and self._audit_window.isVisible():
-            self._audit_window.raise_()
-            return
+        if hasattr(self, '_audit_window'):
+            self._audit_window.close()
         self._audit_window = AuditWindow(self._session.id, self.app.db)
         self._audit_window.show()
 
@@ -433,6 +432,17 @@ class LiveView(QWidget):
         if is_final:
             self._final_transcripts.append(entry)
             self._partial_entry = None
+            speaker = 'You' if entry.speaker == SpeakerType.USER else 'Other'
+            content = f'{speaker}: {entry.text}'
+            if self._session:
+                pos = self._feed_repo.get_next_position(self._session.id)
+                self._feed_repo.create(ChatFeedItem(
+                    session_id=self._session.id,
+                    item_type=FeedItemType.TRANSCRIPT,
+                    content=content,
+                    position=pos
+                ))
+            self._chat_feed.add_transcript(content)
         else:
             self._partial_entry = entry
         last = entry.text
@@ -487,24 +497,12 @@ class LiveView(QWidget):
 
         pos = self._feed_repo.get_next_position(session_id)
 
-        if transcript:
-            transcript_text = '\n'.join(e.text for e in transcript[-5:])
-            self._feed_repo.create(ChatFeedItem(
-                session_id=session_id,
-                item_type=FeedItemType.TRANSCRIPT,
-                content=transcript_text,
-                position=pos
-            ))
-            self._chat_feed.add_transcript_divider(transcript_text)
-            pos += 1
-
         self._feed_repo.create(ChatFeedItem(
             session_id=session_id,
             item_type=FeedItemType.QUESTION,
             content=query_text,
             position=pos
         ))
-        self._chat_feed.add_question(query_text)
         pos += 1
 
         answer_item = ChatFeedItem(
@@ -516,7 +514,8 @@ class LiveView(QWidget):
         )
         self._feed_repo.create(answer_item)
         self._answer_feed_ids[thread_id] = answer_item.id
-        self._chat_feed.add_answer(thread_id)
+
+        self._chat_feed.add_query_group(thread_id, query_text)
 
         conversation = self._conversation_cache.get(session_id, brain.id)
         snap = conversation.snapshot()

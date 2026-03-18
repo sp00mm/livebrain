@@ -16,8 +16,18 @@ from ui.styles import (
     STYLE_SHEET, BG_PRIMARY, BG_SECONDARY, BG_CARD,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM,
     FEED_QUESTION_BG, FEED_ANSWER_FADED, FEED_DIVIDER,
-    AUDIT_STEP_COLOR, ERROR_COLOR
+    AUDIT_STEP_COLOR, ERROR_COLOR,
+    ROLE_QUESTION_COLOR, ROLE_ANSWER_COLOR, ROLE_TOOL_COLOR,
+    QUERY_GROUP_BORDER, TRANSCRIPT_YOU_COLOR, TRANSCRIPT_OTHER_COLOR
 )
+
+
+def _make_dot(color):
+    dot = QLabel('\u25cf')
+    dot.setFixedWidth(12)
+    dot.setStyleSheet(f'color: {color}; font-size: 8px;')
+    dot.setAlignment(Qt.AlignmentFlag.AlignTop)
+    return dot
 
 
 class CollapsibleSection(QFrame):
@@ -65,29 +75,46 @@ class CollapsibleSection(QFrame):
 class AuditFeedItem(QFrame):
     def __init__(self, item, parent=None):
         super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(10, 6, 10, 6)
+        row.setSpacing(6)
+
+        if item.item_type == FeedItemType.QUESTION:
+            dot_color = ROLE_QUESTION_COLOR
+        elif item.item_type == FeedItemType.ANSWER:
+            dot_color = ROLE_ANSWER_COLOR
+        elif item.item_type == FeedItemType.TRANSCRIPT:
+            dot_color = TRANSCRIPT_YOU_COLOR if item.content.startswith('You: ') else TRANSCRIPT_OTHER_COLOR
+        else:
+            dot_color = TEXT_DIM
+
+        row.addWidget(_make_dot(dot_color))
+
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(2)
 
         if item.item_type == FeedItemType.QUESTION:
             label = QLabel(item.content)
             label.setWordWrap(True)
             label.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 12px; font-weight: 500;')
-            layout.addWidget(label)
-            self.setStyleSheet(f'QFrame {{ background-color: {FEED_QUESTION_BG}; border-radius: 6px; }}')
+            content_layout.addWidget(label)
         elif item.item_type == FeedItemType.ANSWER:
             label = QLabel(item.content)
             label.setWordWrap(True)
             label.setStyleSheet(f'color: {FEED_ANSWER_FADED}; font-size: 12px;')
-            layout.addWidget(label)
+            content_layout.addWidget(label)
         elif item.item_type == FeedItemType.TRANSCRIPT:
             label = QLabel(item.content)
             label.setWordWrap(True)
             label.setStyleSheet(f'color: {TEXT_DIM}; font-size: 11px;')
-            layout.addWidget(label)
+            content_layout.addWidget(label)
 
         ts = QLabel(item.created_at.strftime('%H:%M:%S'))
         ts.setStyleSheet(f'color: {TEXT_DIM}; font-size: 10px;')
-        layout.addWidget(ts)
+        content_layout.addWidget(ts)
+
+        row.addLayout(content_layout, 1)
 
 
 class AuditStepItem(QFrame):
@@ -106,6 +133,7 @@ class AuditStepItem(QFrame):
 
         row = QHBoxLayout()
         row.setSpacing(8)
+        row.addWidget(_make_dot(AUDIT_STEP_COLOR))
         type_label = QLabel(labels[step.step_type])
         type_label.setStyleSheet(f'color: {AUDIT_STEP_COLOR}; font-size: 11px; font-style: italic;')
         row.addWidget(type_label, 1)
@@ -118,7 +146,7 @@ class AuditStepItem(QFrame):
             status_text = 'failed'
 
         status = QLabel(status_text)
-        color = TEXT_DIM if step.status == StepStatus.COMPLETED else ERROR_COLOR
+        color = ERROR_COLOR if step.status == StepStatus.FAILED else TEXT_DIM
         status.setStyleSheet(f'color: {color}; font-size: 10px;')
         row.addWidget(status)
         layout.addLayout(row)
@@ -143,6 +171,7 @@ class AuditToolCallItem(QFrame):
 
         header = QHBoxLayout()
         header.setSpacing(8)
+        header.addWidget(_make_dot(ROLE_TOOL_COLOR))
 
         name_label = QLabel(record.tool_name)
         name_label.setStyleSheet(f'color: {AUDIT_STEP_COLOR}; font-size: 11px; font-weight: 500;')
@@ -206,7 +235,8 @@ class AuditToolCallItem(QFrame):
 class AuditInteractionGroup(QFrame):
     def __init__(self, interaction, steps, response, tool_calls, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(f'AuditInteractionGroup {{ background-color: {BG_CARD}; border-radius: 8px; }}')
+        self.setObjectName('auditGroup')
+        self.setStyleSheet(f'QFrame#auditGroup {{ background-color: {BG_CARD}; border-left: 2px solid {QUERY_GROUP_BORDER}; border-radius: 0px; padding-left: 2px; }}')
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)

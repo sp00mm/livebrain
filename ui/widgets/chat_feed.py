@@ -5,10 +5,10 @@ import qtawesome as qta
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
-    QFrame, QSizePolicy, QTextBrowser, QApplication,
+    QFrame, QSizePolicy, QApplication, QTextBrowser,
     QPushButton, QGraphicsOpacityEffect
 )
-from PySide6.QtCore import Qt, QUrl, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QUrl, Signal, QPropertyAnimation, QEasingCurve, QTimer
 from PySide6.QtGui import QDesktopServices
 
 from models import FeedItemType
@@ -16,67 +16,84 @@ from ui.styles import (
     BG_CARD, BG_SECONDARY, BG_BUTTON, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM,
     FEED_QUESTION_BG, FEED_ANSWER_ACTIVE,
     FEED_ANSWER_FADED, FEED_STATUS_COLOR, FONT_FAMILY, LINK_COLOR,
-    TRANSCRIPT_YOU_COLOR, TRANSCRIPT_OTHER_COLOR
+    TRANSCRIPT_YOU_COLOR, TRANSCRIPT_OTHER_COLOR,
+    ROLE_QUESTION_COLOR, ROLE_ANSWER_COLOR, ROLE_TOOL_COLOR, QUERY_GROUP_BORDER
 )
 from ui.markdown_renderer import render_markdown
 
 
-class TranscriptDividerItem(QFrame):
+class TranscriptItem(QFrame):
     def __init__(self, text='', parent=None):
         super().__init__(parent)
-        self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(10, 6, 10, 6)
-        self._layout.setSpacing(2)
-        self._build_lines(text)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 3, 8, 3)
+        layout.setSpacing(1)
 
-    def _build_lines(self, text: str):
-        if not text:
-            return
-        for line in text.split('\n'):
-            line = line.strip()
-            if not line:
+        lines = text.strip().split('\n')
+        for line in lines:
+            if not line.strip():
                 continue
-            if line.startswith('You: '):
-                color = TRANSCRIPT_YOU_COLOR
-            elif line.startswith('Other: '):
-                color = TRANSCRIPT_OTHER_COLOR
-            else:
-                color = TEXT_DIM
-            label = QLabel(line)
-            label.setWordWrap(True)
-            label.setStyleSheet(f'color: {color}; font-size: 11px;')
-            self._layout.addWidget(label)
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            row.setContentsMargins(0, 0, 0, 0)
 
+            is_user = line.startswith('You:')
+            color = TRANSCRIPT_YOU_COLOR if is_user else TRANSCRIPT_OTHER_COLOR
+
+            dot = QLabel('\u2022')
+            dot.setFixedWidth(10)
+            dot.setStyleSheet(f'color: {color}; font-size: 14px;')
+            dot.setAlignment(Qt.AlignmentFlag.AlignTop)
+            row.addWidget(dot)
+
+            speaker = 'You' if is_user else 'Other'
+            content = line.split(':', 1)[1].strip() if ':' in line else line
+
+            text_label = QLabel(f'<b>{speaker}</b>  {content}')
+            text_label.setWordWrap(True)
+            text_label.setStyleSheet(f'color: {color}; font-size: 11px;')
+            row.addWidget(text_label, 1)
+
+            layout.addLayout(row)
+
+
+TranscriptDividerItem = TranscriptItem
 
 
 class QuestionItem(QFrame):
     def __init__(self, text: str, parent=None):
         super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 6, 8, 6)
+        row.setSpacing(6)
+
+        dot = QLabel('\u2022')
+        dot.setFixedWidth(10)
+        dot.setStyleSheet(f'color: {ROLE_QUESTION_COLOR}; font-size: 14px;')
+        dot.setAlignment(Qt.AlignmentFlag.AlignTop)
+        row.addWidget(dot)
 
         label = QLabel(text)
         label.setWordWrap(True)
-        label.setStyleSheet(f'''
-            color: {TEXT_PRIMARY};
-            font-size: 13px;
-            font-weight: 500;
-        ''')
-        layout.addWidget(label)
+        label.setStyleSheet(f'color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 500;')
+        row.addWidget(label, 1)
 
-        self.setStyleSheet(f'''
-            QFrame {{
-                background-color: {FEED_QUESTION_BG};
-                border-radius: 6px;
-            }}
-        ''')
+        self.setStyleSheet(f'QFrame {{ background-color: {FEED_QUESTION_BG}; border-radius: 6px; }}')
 
 
 class AnswerItem(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(10, 6, 10, 6)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 6, 8, 6)
+        row.setSpacing(6)
+        row.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self._dot = QLabel('\u2022')
+        self._dot.setFixedWidth(10)
+        self._dot.setStyleSheet(f'color: {ROLE_ANSWER_COLOR}; font-size: 14px;')
+        self._dot.setAlignment(Qt.AlignmentFlag.AlignTop)
+        row.addWidget(self._dot)
 
         self._browser = QTextBrowser()
         self._browser.setOpenLinks(False)
@@ -88,19 +105,36 @@ class AnswerItem(QFrame):
         self._browser.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._browser.document().setDocumentMargin(0)
         self._browser.setStyleSheet('QTextBrowser { background: transparent; border: none; }')
-        self._layout.addWidget(self._browser)
+        row.addWidget(self._browser, 1)
 
         self._text = ''
         self._faded = False
         self._file_refs = []
+        self._pending_delta = ''
+
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.setInterval(50)
+        self._render_timer.timeout.connect(self._flush_delta)
 
     def append_delta(self, delta: str):
-        self._text += delta
-        html = render_markdown(self._text)
-        self._browser.setHtml(self._wrap_html(html))
-        self._adjust_height()
+        self._pending_delta += delta
+        if not self._render_timer.isActive():
+            self._render_timer.start()
+
+    def _flush_delta(self):
+        if self._pending_delta:
+            self._text += self._pending_delta
+            self._pending_delta = ''
+            html = render_markdown(self._text)
+            self._browser.setHtml(self._wrap_html(html))
+            self._adjust_height()
 
     def set_complete(self, file_refs=None):
+        if self._pending_delta:
+            self._text += self._pending_delta
+            self._pending_delta = ''
+        self._render_timer.stop()
         self._faded = True
         self._file_refs = file_refs or []
         html = render_markdown(self._text)
@@ -178,15 +212,26 @@ class ToolCallItem(QFrame):
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(4)
 
+        header = QHBoxLayout()
+        header.setSpacing(6)
+
+        dot = QLabel('\u2022')
+        dot.setFixedWidth(10)
+        dot.setStyleSheet(f'color: {ROLE_TOOL_COLOR}; font-size: 14px;')
+        dot.setAlignment(Qt.AlignmentFlag.AlignTop)
+        header.addWidget(dot)
+
         summary = QLabel(detail.summary)
         summary.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: 13px;')
         summary.setWordWrap(True)
-        layout.addWidget(summary)
+        header.addWidget(summary, 1)
+
+        layout.addLayout(header)
 
         self._detail_widget = QWidget()
         self._detail_widget.setVisible(False)
         detail_layout = QVBoxLayout(self._detail_widget)
-        detail_layout.setContentsMargins(0, 4, 0, 0)
+        detail_layout.setContentsMargins(16, 4, 0, 0)
         detail_layout.setSpacing(2)
 
         for key, value in detail.details:
@@ -208,10 +253,70 @@ class ToolCallItem(QFrame):
         super().mousePressEvent(event)
 
 
-class StatusItem(QLabel):
+class StatusItem(QFrame):
     def __init__(self, text: str = '', parent=None):
-        super().__init__(text, parent)
-        self.setStyleSheet(f'color: {FEED_STATUS_COLOR}; font-size: 11px; font-style: italic; padding: 2px 10px;')
+        super().__init__(parent)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 2, 8, 2)
+        row.setSpacing(6)
+
+        dot = QLabel('\u2022')
+        dot.setFixedWidth(10)
+        dot.setStyleSheet(f'color: {FEED_STATUS_COLOR}; font-size: 14px;')
+        dot.setAlignment(Qt.AlignmentFlag.AlignTop)
+        row.addWidget(dot)
+
+        self._text_label = QLabel(text)
+        self._text_label.setStyleSheet(f'color: {FEED_STATUS_COLOR}; font-size: 11px; font-style: italic;')
+        row.addWidget(self._text_label, 1)
+
+    def setText(self, text: str):
+        self._text_label.setText(text)
+
+
+class QueryGroup(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName('queryGroup')
+        self.setStyleSheet(f'QFrame#queryGroup {{ border-left: 2px solid {QUERY_GROUP_BORDER}; margin-left: 4px; padding-left: 4px; }}')
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(4, 4, 0, 4)
+        self._layout.setSpacing(4)
+        self._status_item = None
+        self._answer_item = None
+
+    def add_question(self, text: str) -> QuestionItem:
+        item = QuestionItem(text)
+        self._layout.addWidget(item)
+        return item
+
+    def add_answer(self) -> AnswerItem:
+        self._answer_item = AnswerItem()
+        self._layout.addWidget(self._answer_item)
+        return self._answer_item
+
+    def update_status(self, text: str):
+        if self._status_item:
+            self._status_item.setText(text)
+        else:
+            self._status_item = StatusItem(text)
+            idx = self._layout.count()
+            if self._answer_item:
+                idx = self._layout.indexOf(self._answer_item)
+            self._layout.insertWidget(idx, self._status_item)
+
+    def remove_status(self):
+        if self._status_item:
+            self._status_item.deleteLater()
+            self._status_item = None
+
+    def add_tool_call(self, detail) -> ToolCallItem:
+        item = ToolCallItem(detail)
+        idx = self._layout.count()
+        if self._answer_item:
+            idx = self._layout.indexOf(self._answer_item)
+        self._layout.insertWidget(idx, item)
+        return item
 
 
 class FeedbackItem(QFrame):
@@ -297,8 +402,7 @@ class ChatFeedWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._user_scrolled_up = False
-        self._answer_items: dict[str, AnswerItem] = {}
-        self._status_items: dict[str, StatusItem] = {}
+        self._query_groups: dict[str, QueryGroup] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -322,10 +426,13 @@ class ChatFeedWidget(QWidget):
         vbar.rangeChanged.connect(self._on_range_changed)
         vbar.valueChanged.connect(self._on_scroll)
 
-    def add_transcript_divider(self, text: str = '') -> TranscriptDividerItem:
-        item = TranscriptDividerItem(text)
+    def add_transcript(self, text: str = '') -> TranscriptItem:
+        item = TranscriptItem(text)
         self._insert_item(item)
         return item
+
+    def add_transcript_divider(self, text: str = '') -> TranscriptItem:
+        return self.add_transcript(text)
 
     def add_question(self, text: str) -> QuestionItem:
         item = QuestionItem(text)
@@ -333,38 +440,33 @@ class ChatFeedWidget(QWidget):
         return item
 
     def add_answer(self, thread_id: str) -> AnswerItem:
-        item = AnswerItem()
-        self._answer_items[thread_id] = item
-        self._insert_item(item)
-        return item
+        group = self.add_query_group(thread_id, '')
+        return group._answer_item
+
+    def add_query_group(self, thread_id: str, question_text: str) -> QueryGroup:
+        group = QueryGroup()
+        if question_text:
+            group.add_question(question_text)
+        group.add_answer()
+        self._query_groups[thread_id] = group
+        self._insert_item(group)
+        return group
 
     def append_answer_delta(self, thread_id: str, delta: str):
-        if thread_id in self._answer_items:
-            self._answer_items[thread_id].append_delta(delta)
-            self._auto_scroll()
+        self._query_groups[thread_id]._answer_item.append_delta(delta)
+        self._auto_scroll()
 
     def set_answer_complete(self, thread_id: str, file_refs=None):
-        if thread_id in self._answer_items:
-            self._answer_items[thread_id].set_complete(file_refs)
+        self._query_groups[thread_id]._answer_item.set_complete(file_refs)
 
     def update_status(self, thread_id: str, text: str):
-        if thread_id in self._status_items:
-            self._status_items[thread_id].setText(text)
-        else:
-            item = StatusItem(text)
-            self._status_items[thread_id] = item
-            self._insert_item(item)
-
-    def add_tool_call(self, thread_id: str, detail) -> ToolCallItem:
-        item = ToolCallItem(detail)
-        self._insert_item(item)
-        return item
+        self._query_groups[thread_id].update_status(text)
 
     def remove_status(self, thread_id: str):
-        if thread_id in self._status_items:
-            item = self._status_items.pop(thread_id)
-            item.setVisible(False)
-            item.deleteLater()
+        self._query_groups[thread_id].remove_status()
+
+    def add_tool_call(self, thread_id: str, detail) -> ToolCallItem:
+        return self._query_groups[thread_id].add_tool_call(detail)
 
     def add_feedback_item(self) -> FeedbackItem:
         item = FeedbackItem()
@@ -381,20 +483,36 @@ class ChatFeedWidget(QWidget):
             item = self._layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        self._answer_items.clear()
-        self._status_items.clear()
+        self._query_groups.clear()
 
     def load_from_items(self, items):
         self.clear_feed()
-        for item in items:
+        i = 0
+        while i < len(items):
+            item = items[i]
             if item.item_type == FeedItemType.TRANSCRIPT:
-                self.add_transcript_divider(item.content)
+                self.add_transcript(item.content)
+                i += 1
             elif item.item_type == FeedItemType.QUESTION:
-                self.add_question(item.content)
+                q_text = item.content
+                i += 1
+                if i < len(items) and items[i].item_type == FeedItemType.ANSWER:
+                    answer_item = items[i]
+                    tid = answer_item.thread_id or answer_item.id
+                    group = self.add_query_group(tid, q_text)
+                    group._answer_item.set_text(answer_item.content)
+                    group._answer_item.set_complete()
+                    i += 1
+                else:
+                    self.add_question(q_text)
             elif item.item_type == FeedItemType.ANSWER:
-                answer = self.add_answer(item.thread_id or item.id)
-                answer.set_text(item.content)
-                answer.set_complete()
+                tid = item.thread_id or item.id
+                group = self.add_query_group(tid, '')
+                group._answer_item.set_text(item.content)
+                group._answer_item.set_complete()
+                i += 1
+            else:
+                i += 1
 
     def _insert_item(self, widget: QWidget):
         self._layout.insertWidget(self._layout.count() - 1, widget)

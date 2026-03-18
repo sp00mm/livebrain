@@ -24,13 +24,14 @@ class SessionCard(QFrame):
     def __init__(self, session: Session, qa_count: int = 0, parent=None):
         super().__init__(parent)
         self.session = session
+        self.setObjectName('sessionCard')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(f'''
-            QFrame {{
+            QFrame#sessionCard {{
                 background-color: {BG_CARD};
                 border-radius: 6px;
             }}
-            QFrame:hover {{
+            QFrame#sessionCard:hover {{
                 background-color: {BG_CARD_HOVER};
             }}
         ''')
@@ -233,8 +234,6 @@ class SessionHistoryView(QWidget):
                 f.write(text)
 
     def _on_transcribe_clicked(self):
-        if self._whisper_thread and self._whisper_thread.isRunning():
-            return
         session = self._session_repo.get(self._current_session_id)
         storage = AudioStorage(session.id)
         mic_path = storage.get_mic_path()
