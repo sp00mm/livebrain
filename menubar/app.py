@@ -1,9 +1,9 @@
 import os
+import sys
 from typing import Optional
 
 from PySide6.QtCore import QTimer, QObject, Signal
-
-from AppKit import NSApp
+from PySide6.QtWidgets import QApplication
 
 from services.embedder import Embedder
 from services.scanner import FileScanner
@@ -14,7 +14,6 @@ from services.llm import LLMService
 from services.template_service import TemplateService
 from services.whisper_service import WhisperTranscriptionService
 
-from .status_bar import StatusBarController
 from .hotkeys import GlobalHotkeyManager
 from .popover_window import PopoverWindow, DetachedWindow
 
@@ -53,6 +52,19 @@ class MenuBarApp:
 
         if os.path.exists(model_file):
             self.embedder = Embedder()
+        else:
+            self._download_models(model_dir)
+
+    def _download_models(self, model_dir):
+        from ui.threads import ModelDownloadThread
+        models_parent = os.path.dirname(model_dir)
+        self._model_thread = ModelDownloadThread(self.updater, models_parent)
+        self._model_thread.finished.connect(self._on_models_downloaded)
+        self._model_thread.start()
+
+    def _on_models_downloaded(self, success, error):
+        if success:
+            self.embedder = Embedder()
 
     def _init_ui(self):
         self._signals = RecordingSignals()
@@ -66,6 +78,11 @@ class MenuBarApp:
         self._detached = DetachedWindow()
         self._detached.closed.connect(self._attach_to_popover)
         self._is_detached = False
+
+        if sys.platform == 'darwin':
+            from .status_bar_macos import StatusBarController
+        else:
+            from .status_bar_linux import StatusBarController
 
         self._status_bar = StatusBarController(
             on_click=self._on_status_click,
@@ -138,7 +155,7 @@ class MenuBarApp:
         self._hotkeys.stop()
         if self.audio_service.is_recording():
             self.audio_service.stop_session()
-        NSApp.terminate_(None)
+        QApplication.instance().quit()
 
     def show_popover(self):
         if self._is_detached:

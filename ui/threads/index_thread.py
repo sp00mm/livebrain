@@ -19,7 +19,8 @@ class EstimateThread(QThread):
 
 class IndexThread(QThread):
     file_progress = Signal(str, int, int)  # (filename, current, total)
-    complete = Signal(int, int)  # (bytes, count)
+    complete = Signal(int, int, int)  # (bytes, file_count, chunk_count)
+    cancelled = Signal()
 
     def __init__(self, resource, paths, embedder, scanner, rag):
         super().__init__()
@@ -35,19 +36,22 @@ class IndexThread(QThread):
 
     def run(self):
         total_bytes = 0
+        total_chunks = 0
         for i, filepath in enumerate(self.paths):
             if self._cancelled:
+                self.rag.chunks.delete_by_resource(self.resource.id)
+                self.cancelled.emit()
                 return
             self.file_progress.emit(os.path.basename(filepath), i + 1, len(self.paths))
             total_bytes += os.path.getsize(filepath)
             segments = self.scanner.extract_text_with_meta(filepath)
             segments = [(text, meta) for text, meta in segments if text.strip()]
             if segments:
-                self.rag.index_text_with_meta(
+                total_chunks += self.rag.index_text_with_meta(
                     resource_id=self.resource.id,
                     filepath=filepath,
                     segments=segments,
                     embedding_fn=lambda t: self.embedder.embed(t, is_query=False)
                 )
 
-        self.complete.emit(total_bytes, len(self.paths))
+        self.complete.emit(total_bytes, len(self.paths), total_chunks)

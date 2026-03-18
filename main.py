@@ -1,9 +1,10 @@
 import os
 import sys
 
-pyobjc_path = os.path.join(os.path.dirname(sys.executable), '..', 'Resources', 'pyobjc')
-if os.path.exists(pyobjc_path):
-    sys.path.insert(0, pyobjc_path)
+if sys.platform == 'darwin':
+    pyobjc_path = os.path.join(os.path.dirname(sys.executable), '..', 'Resources', 'pyobjc')
+    if os.path.exists(pyobjc_path):
+        sys.path.insert(0, pyobjc_path)
 
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 import json

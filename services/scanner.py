@@ -4,6 +4,8 @@ from PyPDF2 import PdfReader
 
 
 class FileScanner:
+    MAX_FILE_SIZE = 1_000_000  # 1 MB
+
     TEXT_EXTENSIONS = {
         '.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.xml', '.csv', '.log',
         '.ts', '.tsx', '.jsx', '.go', '.rs', '.java', '.rb', '.php', '.swift', '.kt',
@@ -22,10 +24,18 @@ class FileScanner:
     SKIP_DIRS = {
         'node_modules', '__pycache__', '.git', '.venv', 'venv', '.env', 'dist',
         'build', '.next', '.nuxt', '.cache', '.idea', '.vscode', 'vendor',
-        'target', '.gradle',
+        'target', '.gradle', '.svn', '.hg', '.terraform', '.serverless',
+        'coverage', '.nyc_output', '.pytest_cache', '.mypy_cache', '.tox',
+        '.eggs', '.turbo', '.parcel-cache',
     }
 
-    SKIP_FILES = {'.DS_Store', 'Thumbs.db', '.gitkeep'}
+    SKIP_FILES = {
+        '.DS_Store', 'Thumbs.db', '.gitkeep',
+        'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
+        'Cargo.lock', 'Gemfile.lock', 'go.sum', 'composer.lock',
+    }
+
+    SKIP_SUFFIXES = ('.min.js', '.min.css', '.map', '.bundle.js')
 
     def scan_directory(self, directory):
         return list(self._walk_filtered(directory))
@@ -60,7 +70,8 @@ class FileScanner:
                 specs.append(pathspec.PathSpec.from_lines('gitignore', f))
 
         for root, dirs, filenames in os.walk(directory):
-            dirs[:] = [d for d in dirs if d not in self.SKIP_DIRS]
+            dirs[:] = [d for d in dirs
+                       if d not in self.SKIP_DIRS and not d.endswith('.egg-info')]
 
             nested_gitignore = os.path.join(root, '.gitignore')
             if root != directory and os.path.isfile(nested_gitignore):
@@ -70,13 +81,24 @@ class FileScanner:
             for filename in filenames:
                 if filename in self.SKIP_FILES:
                     continue
+                if filename.endswith(self.SKIP_SUFFIXES):
+                    continue
                 filepath = os.path.join(root, filename)
                 rel_path = os.path.relpath(filepath, directory)
                 if any(spec.match_file(rel_path) for spec in specs):
                     continue
                 ext = os.path.splitext(filename)[1].lower()
-                if ext in self.SUPPORTED_EXTENSIONS:
-                    yield filepath
+                if ext not in self.SUPPORTED_EXTENSIONS:
+                    continue
+                if os.path.getsize(filepath) > self.MAX_FILE_SIZE:
+                    continue
+                if ext in self.TEXT_EXTENSIONS and self._is_binary(filepath):
+                    continue
+                yield filepath
+
+    def _is_binary(self, filepath):
+        with open(filepath, 'rb') as f:
+            return b'\x00' in f.read(8192)
 
     def _extract_text_file(self, filepath):
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:

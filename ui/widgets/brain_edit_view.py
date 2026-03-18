@@ -110,16 +110,20 @@ class ResourceRow(QFrame):
         layout.addWidget(name_label, 1)
 
         if resource.resource_type == ResourceType.FOLDER:
-            status_map = {
-                IndexStatus.PENDING: ('Pending', TEXT_DIM),
-                IndexStatus.INDEXING: ('Scanning...', '#6eb5ff'),
-                IndexStatus.INDEXED: ('Ready', '#4CAF50'),
-                IndexStatus.FAILED: ('Failed', '#ff6b6b'),
-            }
-            text, color = status_map[resource.index_status]
-            status_label = QLabel(text)
-            status_label.setStyleSheet(f'color: {color}; font-size: 11px;')
-            layout.addWidget(status_label)
+            if resource.index_status == IndexStatus.INDEXED and resource.file_count:
+                text = f'Ready \u00b7 {resource.file_count} files \u00b7 {resource.size_mb:.1f} MB'
+                color = '#4CAF50'
+            else:
+                status_map = {
+                    IndexStatus.PENDING: ('Pending', TEXT_DIM),
+                    IndexStatus.INDEXING: ('Scanning...', '#6eb5ff'),
+                    IndexStatus.INDEXED: ('Ready', '#4CAF50'),
+                    IndexStatus.FAILED: ('Failed', '#ff6b6b'),
+                }
+                text, color = status_map[resource.index_status]
+            self._status_label = QLabel(text)
+            self._status_label.setStyleSheet(f'color: {color}; font-size: 11px;')
+            layout.addWidget(self._status_label)
 
         delete_btn = QPushButton()
         delete_btn.setObjectName('iconBtn')
@@ -321,6 +325,11 @@ class BrainEditView(QWidget):
 
         resources = self.resource_repo.get_by_brain(self._brain.id)
         for r in resources:
+            if r.index_status == IndexStatus.INDEXING:
+                from services.database import DocumentChunkRepository
+                DocumentChunkRepository(self.db).delete_by_resource(r.id)
+                self.resource_repo.update_index_status(r.id, IndexStatus.PENDING)
+                r.index_status = IndexStatus.PENDING
             row = ResourceRow(r)
             row.removed.connect(self._remove_resource)
             self._resources_layout.addWidget(row)
@@ -410,6 +419,36 @@ class BrainEditView(QWidget):
         self._estimate_thread.start()
 
     def _on_estimate_done(self, resource, paths):
+        from services.embedder import Embedder
+        model_dir = Embedder.get_model_dir()
+        model_file = os.path.join(model_dir, 'onnx', 'model_q4.onnx')
+
+        if not os.path.exists(model_file):
+            self._pending_index = (resource, paths)
+            self.resource_repo.update_index_status(resource.id, IndexStatus.INDEXING)
+            self._load_resources()
+            from services.updater import Updater
+            from ui.threads import ModelDownloadThread
+            self._model_thread = ModelDownloadThread(Updater(), os.path.dirname(model_dir))
+            self._model_thread.finished.connect(self._on_model_downloaded)
+            self._model_thread.start()
+            return
+
+        self._start_index_thread(resource, paths)
+
+    def _on_model_downloaded(self, success, error):
+        if not success or not self._pending_index:
+            if self._pending_index:
+                resource, _ = self._pending_index
+                self.resource_repo.update_index_status(resource.id, IndexStatus.FAILED)
+                self._load_resources()
+            self._pending_index = None
+            return
+        resource, paths = self._pending_index
+        self._pending_index = None
+        self._start_index_thread(resource, paths)
+
+    def _start_index_thread(self, resource, paths):
         self.resource_repo.update_index_status(resource.id, IndexStatus.INDEXING)
         self._load_resources()
 
@@ -424,10 +463,27 @@ class BrainEditView(QWidget):
             resource=resource, paths=paths,
             embedder=embedder, scanner=scanner, rag=rag
         )
+        self._index_thread.file_progress.connect(
+            lambda name, cur, total: self._on_file_progress(resource, cur, total)
+        )
         self._index_thread.complete.connect(
-            lambda bytes_, count: self._on_index_done(resource, bytes_, count)
+            lambda bytes_, count, chunks: self._on_index_done(resource, bytes_, count)
+        )
+        self._index_thread.cancelled.connect(
+            lambda: self._on_index_cancelled(resource)
         )
         self._index_thread.start()
+
+    def _on_file_progress(self, resource, current, total):
+        for i in range(self._resources_layout.count()):
+            widget = self._resources_layout.itemAt(i).widget()
+            if isinstance(widget, ResourceRow) and widget.resource.id == resource.id:
+                widget._status_label.setText(f'Scanning {current}/{total}...')
+                break
+
+    def _on_index_cancelled(self, resource):
+        self.resource_repo.update_index_status(resource.id, IndexStatus.PENDING)
+        self._load_resources()
 
     def _on_index_done(self, resource, total_bytes, file_count):
         self.resource_repo.update_index_status(

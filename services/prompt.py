@@ -14,7 +14,7 @@ class SystemPromptBuilder:
         else:
             self._sections.append(
                 'You are a real-time conversation assistant inside Livebrain, '
-                'a macOS app that transcribes live conversations and lets users '
+                'a desktop app that transcribes live conversations and lets users '
                 'ask questions about what was said and their documents.'
                 'Workflow Expectations:\n'
                 '- Always strive to fully answer the user\'s question before yielding the turn\n'
