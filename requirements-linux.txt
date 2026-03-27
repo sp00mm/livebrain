@@ -1,0 +1,17 @@
+PySide6
+qtawesome
+onnxruntime
+tokenizers
+numpy
+libsql
+PyPDF2
+pynput==1.7.6
+openai>=1.68.0
+keyring
+python-docx
+openpyxl
+python-pptx
+pathspec
+markdown
+sounddevice
+vosk

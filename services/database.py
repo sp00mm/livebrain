@@ -410,7 +410,25 @@ class DocumentChunkRepository:
 
     def create_many(self, chunks: list[DocumentChunk]) -> None:
         for chunk in chunks:
-            self.create(chunk)
+            embedding_json = json.dumps(chunk.embedding)
+            source_meta_json = json.dumps(chunk.source_meta) if chunk.source_meta else None
+            self.conn.execute('''
+                INSERT INTO document_chunks (id, resource_id, filepath, chunk_index,
+                                            start_char, end_char, text, embedding,
+                                            source_meta, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, vector32(?), ?, ?)
+            ''', [
+                chunk.id, chunk.resource_id, chunk.filepath, chunk.chunk_index,
+                chunk.start_char, chunk.end_char, chunk.text, embedding_json,
+                source_meta_json, _dt_to_str(chunk.created_at)
+            ])
+        self.conn.commit()
+
+    def count_by_resource(self, resource_id: str) -> int:
+        cursor = self.conn.execute(
+            'SELECT COUNT(*) FROM document_chunks WHERE resource_id = ?', [resource_id]
+        )
+        return cursor.fetchone()[0]
 
     def get_by_resource(self, resource_id: str) -> list[DocumentChunk]:
         cursor = self.conn.execute(
@@ -1049,11 +1067,11 @@ class RAGService:
         embedding_fn,
         chunk_size: int = 1000,
         chunk_overlap: int = 200
-    ) -> None:
-        chunk_index = 0
+    ) -> int:
+        batch, chunk_index = [], 0
         for text, meta in segments:
             for chunk_text, start, end in self._chunk_text(text, chunk_size, chunk_overlap):
-                self.chunks.create(DocumentChunk(
+                batch.append(DocumentChunk(
                     resource_id=resource_id,
                     filepath=filepath,
                     chunk_index=chunk_index,
@@ -1064,6 +1082,8 @@ class RAGService:
                     source_meta=meta if meta else None
                 ))
                 chunk_index += 1
+        self.chunks.create_many(batch)
+        return len(batch)
 
     def search(self, query_embedding: list[float], resource_ids: Optional[list[str]] = None, limit: int = 10) -> list[dict]:
         """Search for relevant chunks. Returns list of {chunk, similarity, resource}."""

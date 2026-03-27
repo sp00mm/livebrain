@@ -21,7 +21,7 @@ def install():
         try:
             data = json.dumps({
                 'app_version': get_version(),
-                'os_version': platform.mac_ver()[0],
+                'os_version': platform.mac_ver()[0] if sys.platform == 'darwin' else platform.platform(),
                 'python_version': platform.python_version(),
                 'exception_type': exc_type.__name__,
                 'exception_message': str(exc_value),

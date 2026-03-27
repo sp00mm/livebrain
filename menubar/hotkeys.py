@@ -1,5 +1,8 @@
+import sys
 from typing import Callable, Optional
 from pynput import keyboard
+
+HOTKEY = '<cmd>+<shift>+l' if sys.platform == 'darwin' else '<ctrl>+<shift>+l'
 
 
 class GlobalHotkeyManager:
@@ -9,7 +12,7 @@ class GlobalHotkeyManager:
 
     def start(self):
         self._listener = keyboard.GlobalHotKeys({
-            '<cmd>+<shift>+l': self._handle_toggle
+            HOTKEY: self._handle_toggle
         })
         self._listener.start()
 

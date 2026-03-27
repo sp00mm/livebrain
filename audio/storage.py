@@ -1,5 +1,6 @@
 import os
 import struct
+import sys
 import wave
 from typing import Optional
 
@@ -11,7 +12,10 @@ class AudioStorage:
 
     def __init__(self, session_id: str, base_dir: Optional[str] = None):
         if base_dir is None:
-            base_dir = os.path.expanduser('~/Library/Application Support/Livebrain/recordings')
+            if sys.platform == 'darwin':
+                base_dir = os.path.expanduser('~/Library/Application Support/Livebrain/recordings')
+            else:
+                base_dir = os.path.expanduser('~/.livebrain/recordings')
         self.session_dir = os.path.join(base_dir, session_id)
         os.makedirs(self.session_dir, exist_ok=True)
         self._mic_file: Optional[wave.Wave_write] = None
