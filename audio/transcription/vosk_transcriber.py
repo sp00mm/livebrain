@@ -4,8 +4,6 @@ import struct
 import sys
 from typing import Callable, Optional
 
-from vosk import Model, KaldiRecognizer
-
 from audio.interfaces import Transcriber
 
 
@@ -23,6 +21,7 @@ class VoskTranscriber(Transcriber):
         self._on_result = None
 
     def start(self, on_result: Callable[[str, float, bool], None]):
+        from vosk import Model, KaldiRecognizer
         self._on_result = on_result
         model = Model(model_path=_model_dir())
         self._recognizer = KaldiRecognizer(model, 48000)

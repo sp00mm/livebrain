@@ -58,7 +58,6 @@ class SettingsView(QWidget):
         key_row.addWidget(self._key_status)
         layout.addLayout(key_row)
 
-        # Audio devices section
         devices_label = QLabel('Audio Devices')
         devices_label.setStyleSheet(f'color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 600;')
         layout.addWidget(devices_label)

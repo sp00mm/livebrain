@@ -45,6 +45,7 @@ class MenuBarApp:
         self.embedder: Optional[Embedder] = None
 
         self._init_embedder()
+        self._init_vosk_model()
 
     def _init_embedder(self):
         model_dir = Embedder.get_model_dir()
@@ -52,7 +53,6 @@ class MenuBarApp:
 
         if os.path.exists(model_file):
             self.embedder = Embedder()
-            self._init_vosk_model()
         else:
             self._download_models(model_dir)
 
@@ -66,7 +66,6 @@ class MenuBarApp:
     def _on_models_downloaded(self, success, error):
         if success:
             self.embedder = Embedder()
-            self._init_vosk_model()
 
     def _init_vosk_model(self):
         if sys.platform == 'darwin':

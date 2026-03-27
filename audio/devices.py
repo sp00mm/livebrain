@@ -10,21 +10,18 @@ class AudioDevice:
 
 
 def list_input_devices() -> list[AudioDevice]:
-    try:
-        import sounddevice as sd
-        devices = []
-        for i, d in enumerate(sd.query_devices()):
-            if d['max_input_channels'] <= 0:
+    import sounddevice as sd
+    devices = []
+    for i, d in enumerate(sd.query_devices()):
+        if d['max_input_channels'] <= 0:
+            continue
+        name = d['name']
+        if sys.platform != 'darwin':
+            lower = name.lower()
+            if any(skip in lower for skip in ['monitor', 'loopback']):
                 continue
-            name = d['name']
-            if sys.platform != 'darwin':
-                lower = name.lower()
-                if any(skip in lower for skip in ['monitor', 'loopback']):
-                    continue
-            devices.append(AudioDevice(name=name, id=str(i)))
-        return devices
-    except Exception:
-        return []
+        devices.append(AudioDevice(name=name, id=str(i)))
+    return devices
 
 
 def list_output_devices() -> list[AudioDevice]:
