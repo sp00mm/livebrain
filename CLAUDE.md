@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Livebrain is a macOS menu bar application (PySide6/Qt) that provides real-time AI assistance during live conversations. It transcribes audio (mic + system), answers questions with full conversation context, and searches user files locally using embeddings. Targets macOS 14.0+.
+Livebrain is a desktop application (PySide6/Qt) that provides real-time AI assistance during live conversations. It transcribes audio (mic + system), answers questions with full conversation context, and searches user files locally using embeddings. Supports macOS 14.0+ and Linux (PipeWire/PulseAudio).
 
 ## Common Commands
 

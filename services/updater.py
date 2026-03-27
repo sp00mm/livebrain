@@ -8,6 +8,7 @@ import zipfile
 # Override with LIVEBRAIN_UPDATE_URL / LIVEBRAIN_MODEL_URL for self-hosted deployments
 UPDATE_URL = os.environ.get('LIVEBRAIN_UPDATE_URL', 'https://livebrain.app/version.json')
 MODEL_URL = os.environ.get('LIVEBRAIN_MODEL_URL', 'https://axa3tfnfy6dd.objectstorage.us-chicago-1.oci.customer-oci.com/p/V4u-uKDpP_p2kHbWEZPQZ0sEBe0-qZCqW5i3yu3fK-VC-ZIgCxd8rm7wdK6fL6NV/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip')
+VOSK_MODEL_URL = os.environ.get('LIVEBRAIN_VOSK_MODEL_URL', 'https://axa3tfnfy6dd.objectstorage.us-chicago-1.oci.customer-oci.com/p/GYZtSLqkmOb2DwwoUFMeHHF1po_D8hahjtN-yrPbbah-ZfyJ2XleYHTCBtyPOd1o/n/axa3tfnfy6dd/b/livebrain-models/o/vosk-model-small-en-us-0.15.zip')
 
 def _app_root():
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
@@ -50,20 +51,30 @@ class Updater:
 
     def download_models(self, dest_dir, progress_callback=None):
         os.makedirs(dest_dir, exist_ok=True)
-        zip_path = os.path.join(dest_dir, "models.zip")
-        
-        def report_progress(block_num, block_size, total_size):
-            if progress_callback and total_size > 0:
-                downloaded = block_num * block_size
-                percent = min(100, int(downloaded * 100 / total_size))
-                progress_callback(percent, downloaded, total_size)
-        
-        urllib.request.urlretrieve(MODEL_URL, zip_path, report_progress)
-        model_subdir = os.path.join(dest_dir, "embeddinggemma-onnx")
+        zip_path = os.path.join(dest_dir, 'models.zip')
+        urllib.request.urlretrieve(MODEL_URL, zip_path, _progress_hook(progress_callback))
+        model_subdir = os.path.join(dest_dir, 'embeddinggemma-onnx')
         os.makedirs(model_subdir, exist_ok=True)
-        
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(model_subdir)
-        
         os.remove(zip_path)
+
+    def download_vosk_model(self, dest_dir, progress_callback=None):
+        os.makedirs(dest_dir, exist_ok=True)
+        zip_path = os.path.join(dest_dir, 'vosk-model.zip')
+        urllib.request.urlretrieve(VOSK_MODEL_URL, zip_path, _progress_hook(progress_callback))
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(dest_dir)
+        os.remove(zip_path)
+
+
+def _progress_hook(callback):
+    if not callback:
+        return None
+    def hook(block_num, block_size, total_size):
+        if total_size > 0:
+            downloaded = block_num * block_size
+            percent = min(100, int(downloaded * 100 / total_size))
+            callback(percent, downloaded, total_size)
+    return hook
 

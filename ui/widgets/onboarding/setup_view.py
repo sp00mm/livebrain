@@ -1,3 +1,5 @@
+import sys
+
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -106,6 +108,7 @@ class SetupView(QWidget):
     def __init__(self, app, parent=None):
         super().__init__(parent)
         self._app = app
+        self._is_linux = sys.platform != 'darwin'
         self.setStyleSheet(BASE_STYLE + INPUT_STYLE)
 
         layout = QVBoxLayout(self)
@@ -134,8 +137,12 @@ class SetupView(QWidget):
         self._model_row = CheckRow('AI model')
         self._key_row = CheckRow('OpenAI API key')
 
-        for row in [self._mic_row, self._screen_row, self._model_row, self._key_row]:
-            layout.addWidget(row)
+        if self._is_linux:
+            for row in [self._model_row, self._key_row]:
+                layout.addWidget(row)
+        else:
+            for row in [self._mic_row, self._screen_row, self._model_row, self._key_row]:
+                layout.addWidget(row)
 
         layout.addSpacing(16)
 
@@ -156,13 +163,14 @@ class SetupView(QWidget):
     def run_checks(self):
         mic = permissions.check_microphone()
         model = permissions.check_model_downloaded()
+        vosk = permissions.check_vosk_model_downloaded()
         key = permissions.check_api_key()
 
         self._mic_row.set_status(mic)
-        self._model_row.set_status(model)
+        self._model_row.set_status(model and vosk)
         self._key_row.set_status(key)
 
-        self._pending_checks = (mic, model, key)
+        self._pending_checks = (mic, model and vosk, key)
         permissions.check_screen_recording(self._on_screen_check)
 
     def _on_screen_check(self, ok):
@@ -189,18 +197,47 @@ class SetupView(QWidget):
         self._model_row._action_btn.setVisible(False)
 
         def on_progress(pct, downloaded, total):
-            self._model_row._label.setText(f'AI model — downloading {pct}%')
+            self._model_row._label.setText(f'AI model \u2014 downloading {pct}%')
 
         def on_complete(success, msg):
-            self._model_row._label.setText('AI model')
-            self.run_checks()
             if success:
                 self._app._init_embedder()
+                if self._is_linux:
+                    self._download_vosk()
+                    return
+            self._model_row._label.setText('AI model')
+            self.run_checks()
 
         self._download_thread = ModelDownloadThread(self._app.updater, Embedder.get_model_dir())
         self._download_thread.progress.connect(on_progress)
         self._download_thread.finished.connect(on_complete)
         self._download_thread.start()
+
+    def _download_vosk(self):
+        from ui.threads.model_download_thread import ModelDownloadThread
+        from audio.transcription.vosk_transcriber import _model_dir
+        import os
+
+        if os.path.isdir(_model_dir()):
+            self._model_row._label.setText('AI model')
+            self.run_checks()
+            return
+
+        def on_progress(pct, downloaded, total):
+            self._model_row._label.setText(f'Speech model \u2014 downloading {pct}%')
+
+        def on_complete(success, msg):
+            self._model_row._label.setText('AI model')
+            self.run_checks()
+
+        models_parent = os.path.dirname(_model_dir())
+        self._vosk_thread = ModelDownloadThread(
+            self._app.updater, models_parent,
+            download_fn=self._app.updater.download_vosk_model
+        )
+        self._vosk_thread.progress.connect(on_progress)
+        self._vosk_thread.finished.connect(on_complete)
+        self._vosk_thread.start()
 
     def _show_key_input(self):
         self._key_row.show_input()

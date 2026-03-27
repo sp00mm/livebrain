@@ -52,6 +52,7 @@ class MenuBarApp:
 
         if os.path.exists(model_file):
             self.embedder = Embedder()
+            self._init_vosk_model()
         else:
             self._download_models(model_dir)
 
@@ -65,6 +66,21 @@ class MenuBarApp:
     def _on_models_downloaded(self, success, error):
         if success:
             self.embedder = Embedder()
+            self._init_vosk_model()
+
+    def _init_vosk_model(self):
+        if sys.platform == 'darwin':
+            return
+        from audio.transcription.vosk_transcriber import _model_dir
+        if os.path.isdir(_model_dir()):
+            return
+        from ui.threads import ModelDownloadThread
+        models_parent = os.path.dirname(_model_dir())
+        self._vosk_thread = ModelDownloadThread(
+            self.updater, models_parent,
+            download_fn=self.updater.download_vosk_model
+        )
+        self._vosk_thread.start()
 
     def _init_ui(self):
         self._signals = RecordingSignals()
