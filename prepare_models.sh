@@ -24,6 +24,6 @@ echo ""
 echo "Next steps:"
 echo "  cd ../scripts && ./upload-models.sh"
 echo ""
-echo "This will upload to Oracle Object Storage at:"
-echo "  https://objectstorage.us-chicago-1.oraclecloud.com/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip"
+echo "Upload to Firebase Storage with:"
+echo "  cd ../scripts && ./upload-models.sh"
 

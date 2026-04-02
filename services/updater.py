@@ -7,8 +7,8 @@ import zipfile
 
 # Override with LIVEBRAIN_UPDATE_URL / LIVEBRAIN_MODEL_URL for self-hosted deployments
 UPDATE_URL = os.environ.get('LIVEBRAIN_UPDATE_URL', 'https://livebrain.app/version.json')
-MODEL_URL = os.environ.get('LIVEBRAIN_MODEL_URL', 'https://axa3tfnfy6dd.objectstorage.us-chicago-1.oci.customer-oci.com/p/V4u-uKDpP_p2kHbWEZPQZ0sEBe0-qZCqW5i3yu3fK-VC-ZIgCxd8rm7wdK6fL6NV/n/axa3tfnfy6dd/b/livebrain-models/o/embeddinggemma-onnx.zip')
-VOSK_MODEL_URL = os.environ.get('LIVEBRAIN_VOSK_MODEL_URL', 'https://axa3tfnfy6dd.objectstorage.us-chicago-1.oci.customer-oci.com/p/GYZtSLqkmOb2DwwoUFMeHHF1po_D8hahjtN-yrPbbah-ZfyJ2XleYHTCBtyPOd1o/n/axa3tfnfy6dd/b/livebrain-models/o/vosk-model-small-en-us-0.15.zip')
+MODEL_URL = os.environ.get('LIVEBRAIN_MODEL_URL', 'https://firebasestorage.googleapis.com/v0/b/livebrain-d94da.firebasestorage.app/o/models%2Fembeddinggemma-onnx.zip?alt=media')
+VOSK_MODEL_URL = os.environ.get('LIVEBRAIN_VOSK_MODEL_URL', 'https://firebasestorage.googleapis.com/v0/b/livebrain-d94da.firebasestorage.app/o/models%2Fvosk-model-small-en-us-0.15.zip?alt=media')
 
 def _app_root():
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
