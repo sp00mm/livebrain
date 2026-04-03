@@ -45,6 +45,7 @@ $PYTHON -m nuitka --standalone \
   --nofollow-import-to=ScreenCaptureKit \
   --nofollow-import-to=Quartz \
   --nofollow-import-to=HIServices \
+  --nofollow-import-to=Speech \
   --no-deployment-flag=excluded-module-usage \
   --static-libpython=no \
   --include-data-files=version.json=version.json \
@@ -74,7 +75,7 @@ echo "Bundling PyObjC frameworks..."
 SITE_PACKAGES="venv/lib/$($PYTHON -c 'import sys; print(f"python{sys.version_info.major}.{sys.version_info.minor}")')/site-packages"
 PYOBJC_DIR="Livebrain.app/Contents/Resources/pyobjc"
 mkdir -p "$PYOBJC_DIR"
-for pkg in objc PyObjCTools AppKit Foundation CoreFoundation Cocoa AVFoundation AVFAudio CoreAudio CoreMedia ScreenCaptureKit Quartz HIServices; do
+for pkg in objc PyObjCTools AppKit Foundation CoreFoundation Cocoa AVFoundation AVFAudio CoreAudio CoreMedia ScreenCaptureKit Quartz HIServices Speech; do
     if [ -d "$SITE_PACKAGES/$pkg" ]; then
         cp -R "$SITE_PACKAGES/$pkg" "$PYOBJC_DIR/"
     fi

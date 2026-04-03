@@ -4,6 +4,8 @@ import sys
 from services.embedder import Embedder
 from services.secrets import secrets
 
+_pending_callbacks = []
+
 
 def check_microphone() -> bool:
     if sys.platform != 'darwin':
@@ -28,6 +30,8 @@ def check_screen_recording(callback):
     from ScreenCaptureKit import SCShareableContent
     def handler(content, error):
         callback(error is None)
+        _pending_callbacks.remove(handler)
+    _pending_callbacks.append(handler)
     SCShareableContent.getShareableContentWithCompletionHandler_(handler)
 
 
@@ -52,8 +56,12 @@ def request_microphone(callback):
         callback(True)
         return
     import AVFoundation as AVF
+    def handler(granted):
+        callback(granted)
+        _pending_callbacks.remove(handler)
+    _pending_callbacks.append(handler)
     AVF.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
-        AVF.AVMediaTypeAudio, callback
+        AVF.AVMediaTypeAudio, handler
     )
 
 
