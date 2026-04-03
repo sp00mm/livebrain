@@ -179,7 +179,7 @@ class SetupView(QWidget):
     def _on_screen_result(self, screen_ok):
         mic, model, key = self._pending_checks
         self._screen_row.set_status(screen_ok)
-        if all([mic, screen_ok, model, key]):
+        if all([screen_ok, model, key]):
             self._status_label.setText('All set!')
             QTimer.singleShot(800, self.setup_complete.emit)
         else:
