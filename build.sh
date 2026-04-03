@@ -45,6 +45,7 @@ $PYTHON -m nuitka --standalone \
   --nofollow-import-to=ScreenCaptureKit \
   --nofollow-import-to=Quartz \
   --nofollow-import-to=HIServices \
+  --no-deployment-flag=excluded-module-usage \
   --static-libpython=no \
   --include-data-files=version.json=version.json \
   --include-data-dir=resources=resources \
@@ -70,7 +71,7 @@ rm -rf Livebrain.app/Contents/MacOS/models 2>/dev/null || true
 
 # Copy PyObjC packages to Resources (excluded from compilation, needed at runtime)
 echo "Bundling PyObjC frameworks..."
-SITE_PACKAGES="venv/lib/python3.12/site-packages"
+SITE_PACKAGES="venv/lib/$($PYTHON -c 'import sys; print(f"python{sys.version_info.major}.{sys.version_info.minor}")')/site-packages"
 PYOBJC_DIR="Livebrain.app/Contents/Resources/pyobjc"
 mkdir -p "$PYOBJC_DIR"
 for pkg in objc PyObjCTools AppKit Foundation CoreFoundation Cocoa AVFoundation AVFAudio CoreAudio CoreMedia ScreenCaptureKit Quartz HIServices; do
