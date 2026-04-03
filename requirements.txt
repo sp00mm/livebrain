@@ -9,7 +9,7 @@ pyobjc-framework-AVFoundation
 pyobjc-framework-ScreenCaptureKit
 pyobjc-framework-Speech
 pyobjc-framework-Cocoa
-pynput==1.7.6
+pynput>=1.8.1
 openai>=1.68.0
 keyring
 python-docx

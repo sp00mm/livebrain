@@ -187,9 +187,24 @@ class SetupView(QWidget):
 
     def _request_mic(self):
         permissions.request_microphone(lambda _: self._recheck.emit())
+        self._start_recheck_poll()
 
     def _request_screen(self):
         permissions.request_screen_recording(lambda _: self._recheck.emit())
+        self._start_recheck_poll()
+
+    def _start_recheck_poll(self):
+        if hasattr(self, '_poll_timer') and self._poll_timer.isActive():
+            return
+        self._poll_timer = QTimer(self)
+        self._poll_count = 0
+        def poll():
+            self._poll_count += 1
+            self.run_checks()
+            if self._poll_count >= 30:
+                self._poll_timer.stop()
+        self._poll_timer.timeout.connect(poll)
+        self._poll_timer.start(2000)
 
     def _download_model(self):
         from ui.threads.model_download_thread import ModelDownloadThread

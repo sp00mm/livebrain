@@ -56,13 +56,19 @@ def request_microphone(callback):
         callback(True)
         return
     import AVFoundation as AVF
-    def handler(granted):
-        callback(granted)
-        _pending_callbacks.remove(handler)
-    _pending_callbacks.append(handler)
-    AVF.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
-        AVF.AVMediaTypeAudio, handler
-    )
+    import subprocess
+    status = AVF.AVCaptureDevice.authorizationStatusForMediaType_(AVF.AVMediaTypeAudio)
+    if status == 0:
+        def handler(granted):
+            callback(granted)
+            _pending_callbacks.remove(handler)
+        _pending_callbacks.append(handler)
+        AVF.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+            AVF.AVMediaTypeAudio, handler
+        )
+    else:
+        subprocess.Popen(['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'])
+        callback(False)
 
 
 def request_speech_recognition(callback):
@@ -75,4 +81,6 @@ def request_speech_recognition(callback):
 
 
 def request_screen_recording(callback):
-    check_screen_recording(callback)
+    import subprocess
+    subprocess.Popen(['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'])
+    callback(False)
